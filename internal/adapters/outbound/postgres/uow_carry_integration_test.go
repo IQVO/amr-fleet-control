@@ -48,3 +48,24 @@ func TestADoFromAFinishedUnitsCtxBeginsItsOwnTransaction(t *testing.T) {
 		t.Fatal("AfterCommit on a finished frame must run at once")
 	}
 }
+
+// carry (Task 12 review): an AfterCommit hook runs after the commit, so a Do it opens with the
+// unit's own ctx must begin a transaction of its own, never join the committed one.
+func TestAHooksOwnDoBeginsItsOwnTransaction(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.Pool(t)
+	uow, fleets := postgres.NewUnitOfWork(pool), postgres.NewFleets(pool)
+	var herr error
+	err := uow.Do(ctx, func(c context.Context) error {
+		uow.AfterCommit(c, func() {
+			herr = uow.Do(c, func(c2 context.Context) error { return fleets.Save(c2, "AMR9", fleetrow.Record{MapVersion: "v1"}) })
+		})
+		return nil
+	})
+	if err != nil || herr != nil {
+		t.Fatalf("unit = %v, hook's Do = %v", err, herr)
+	}
+	if _, ok, err := fleets.Get(ctx, "AMR9"); !ok || err != nil {
+		t.Fatalf("the hook's write did not commit: %v %v", ok, err)
+	}
+}
