@@ -211,8 +211,10 @@ func (r *Robot) AwaitAction(id string, at time.Time) {
 	}
 }
 
-// MarkStopChargeSent records that stopCharging went out for the current charge.
-func (r *Robot) MarkStopChargeSent() { r.s.StopChargeSent = true }
+// MarkStopChargeSent records that stopCharging went out for the current charge, at no known
+// time. carry (Task 11 review): for tests only; production calls MarkStopChargeSentAt with the
+// send time. The zero time makes StopChargeOverdue hold at once while the robot still charges.
+func (r *Robot) MarkStopChargeSent() { r.MarkStopChargeSentAt(time.Time{}) }
 
 // MarkStopChargeSentAt is MarkStopChargeSent at a send time. carry (Task 11 review): the time
 // lets the tick send a lost stopCharging again (StopChargeOverdue).

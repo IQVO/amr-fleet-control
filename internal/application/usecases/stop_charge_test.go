@@ -3,6 +3,7 @@ package usecases_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
 	"github.com/IQVO/amr-fleet-control/internal/application/vda"
@@ -44,4 +45,38 @@ func TestALostStopChargingIsResentAfterTheResendDelay(t *testing.T) {
 	if n := len(h.instants("R1")); n != 1 {
 		t.Fatalf("a robot that stopped charging got stopCharging again (%d)", n)
 	}
+}
+
+// carry (Task 11 review): a lost stopCharging is sent again only to an ONLINE robot. A stale
+// robot cannot answer it; its next state clears the mark (Charging=false) or makes it due again.
+func TestALostStopChargingIsNotResentToAStaleRobot(t *testing.T) {
+	h := newHarness(t, floor(t), nil)
+	h.online("R1", "P1", 15)
+	o := h.lastOrder("R1")
+	h.drive("R1", 0, 5)
+	h.report("R1", func(r *robot.Report) {
+		r.Pending, r.Charging, r.Battery = false, true, 50
+		setAction(r, robot.ActionState{ID: o.OrderID + "-startCharging", Status: robot.ActionFinished}, false)
+	})
+	h.down.Fail(errors.New("mqtt downlink full (1024 commands)"))
+	h.report("R1", func(r *robot.Report) { r.Battery = 80 })
+	h.down.Fail(nil)
+	cfg := usecases.DefaultConfig()
+	h.clock.Advance(cfg.StaleAfter + time.Second)
+	h.must(h.svc.Tick(ctx))
+	h.clock.Advance(cfg.ResendAfter)
+	h.must(h.svc.Tick(ctx))
+	if got := stopChargings(h.instants("R1")); len(got) != 0 {
+		t.Fatalf("stopCharging resent to a stale robot: %+v", got)
+	}
+}
+
+func stopChargings(ia []vda.Action) []vda.Action {
+	var out []vda.Action
+	for _, a := range ia {
+		if a.Type == vda.StopCharging {
+			out = append(out, a)
+		}
+	}
+	return out
 }

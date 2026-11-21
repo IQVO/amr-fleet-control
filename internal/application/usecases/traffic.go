@@ -121,11 +121,13 @@ func (u *unit) chargeAll() error {
 // stopCharging ends each charge at the resume level, once. carry (Task 11 review): a
 // stopCharging still unanswered after ORDER_RESEND_AFTER (refused by a full downlink, lost with
 // the connection, dropped at shutdown) is sent again, so a charged robot is never stranded.
+// carry (Task 11 review): only to an ONLINE robot; a stale one cannot answer, and its next
+// state either clears the mark (Charging=false) or makes the resend due again.
 func (u *unit) stopCharging() {
 	resume, after := u.s.cfg.ChargeResume, u.s.cfg.ResendAfter
 	for _, k := range u.keys {
 		r := u.robots[k]
-		resend := r.StopChargeOverdue(resume, u.now, after)
+		resend := r.Online() && r.StopChargeOverdue(resume, u.now, after) // carry (Task 11 review)
 		if !resend && !r.Charged(resume) {
 			continue
 		}
