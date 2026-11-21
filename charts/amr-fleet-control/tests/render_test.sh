@@ -13,9 +13,12 @@ cm_name="$(awk '/^  name:/ {print $2; exit}' <<<"$configmap")"
 grep -A3 'envFrom:' <<<"$deployment" | grep -q "name: $cm_name" || fail "the api Deployment does not mount the ConfigMap via envFrom"
 
 # Every variable cmd/api reads is in the ConfigMap or the Secret env, and nothing else (Task 16).
+# ruling P3-R16 / plan 04 P4-R18 (lesson b): every binary also reads what the telemetry adapter reads itself (ENVIRONMENT).
+telemetry_vars="$(grep -ohE 'os\.Getenv\("[A-Z_]+"' "$repo_dir"/internal/adapters/outbound/telemetry/telemetry.go | grep -oE '"[A-Z_]+"' | tr -d '"')"
+grep -qx ENVIRONMENT <<<"$telemetry_vars" || fail "the telemetry adapter no longer reads ENVIRONMENT: update this test"
 read_vars="$(grep -ohE '(getenv|r\.or|r\.atLeast|r\.seconds|r\.positive)\("[A-Z_]+"' "$repo_dir"/cmd/api/config.go "$repo_dir"/cmd/api/telemetry.go \
   | grep -oE '"[A-Z_]+"' | tr -d '"' | sort -u)"
-read_vars="$(printf '%s\nMIGRATIONS_DATABASE_URL\n' "$read_vars" | sort -u)"
+read_vars="$(printf '%s\nMIGRATIONS_DATABASE_URL\n%s\n' "$read_vars" "$telemetry_vars" | sort -u)"
 [ "$(wc -l <<<"$read_vars")" -ge 25 ] || fail "found only $(wc -l <<<"$read_vars") env names in cmd/api: extend the pattern, never lower the floor"
 rendered="$( (grep -oE '^  [A-Z_]+:' <<<"$configmap" | tr -d ' :'; grep -oE 'name: [A-Z_]+$' <<<"$deployment" | awk '{print $2}') | sort -u)"
 diff <(echo "$read_vars") <(echo "$rendered") || fail "the api env differs from what cmd/api reads (left: read, right: rendered)"
@@ -56,7 +59,8 @@ mounts = [(m["name"], m["mountPath"], m.get("readOnly")) for m in c["volumeMount
 assert mounts == [("map", "/etc/amr-fleet-control", True)], mounts
 PY
 grep -q 'mountPath: /etc/amr-fleet-control' <<<"$deployment" || fail "map.yaml is not mounted at the map file's directory"
-grep -qE '_MODE|ENVIRONMENT' <<<"$deployment$configmap" && fail "no *_MODE or ENVIRONMENT variable may exist"
+# ruling P3-R16 / P4-R18 (lesson b) SUPERSEDES the brief's "no ENVIRONMENT": it labels telemetry only.
+grep -qE '_MODE' <<<"$deployment$configmap" && fail "no *_MODE variable may exist"
 grep -q 'OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector' <<<"$configmap" || fail "otel must default on with the collector endpoint"
 grep -q 'OTEL_' <<<"$(render --show-only templates/configmap.yaml --set otel.enabled=false)" && fail "otel.enabled=false must render no OTEL_* variable"
 
@@ -67,9 +71,9 @@ mcp="$(helm template amr-fleet-control "$chart_dir" "${all[@]}" --show-only temp
 a2a="$(helm template amr-fleet-control "$chart_dir" "${all[@]}" --show-only templates/a2a-deployment.yaml)"
 # deviation (Task 21): [A-Z0-9_], the brief's [A-Z_] cannot match A2A_ADDR / A2A_AGENT_URL.
 envs() { grep -oE '^            - name: [A-Z0-9_]+$' | awk '{print $3}' | sort -u | tr '\n' ' '; }
-[ "$(envs <<<"$mcp")" = "AMR_MAP_FILE DATABASE_URL LOG_LEVEL MCP_ADDR MIGRATIONS_DATABASE_URL OTEL_EXPORTER_OTLP_ENDPOINT OTEL_SERVICE_NAME SERVICE_VERSION " ] \
+[ "$(envs <<<"$mcp")" = "AMR_MAP_FILE DATABASE_URL ENVIRONMENT LOG_LEVEL MCP_ADDR MIGRATIONS_DATABASE_URL OTEL_EXPORTER_OTLP_ENDPOINT OTEL_SERVICE_NAME SERVICE_VERSION " ] \
   || fail "mcp env = $(envs <<<"$mcp")"
-[ "$(envs <<<"$a2a")" = "A2A_ADDR A2A_AGENT_URL AMR_MAP_FILE DATABASE_URL LOG_LEVEL MIGRATIONS_DATABASE_URL OTEL_EXPORTER_OTLP_ENDPOINT OTEL_SERVICE_NAME SERVICE_VERSION " ] \
+[ "$(envs <<<"$a2a")" = "A2A_ADDR A2A_AGENT_URL AMR_MAP_FILE DATABASE_URL ENVIRONMENT LOG_LEVEL MIGRATIONS_DATABASE_URL OTEL_EXPORTER_OTLP_ENDPOINT OTEL_SERVICE_NAME SERVICE_VERSION " ] \
   || fail "a2a env = $(envs <<<"$a2a")"
 grep -q 'envFrom' <<<"$mcp$a2a" && fail "mcp and a2a must not mount the api env (no Kafka or MQTT variable)"
 grep -q 'value: "amr-fleet-control-mcp"' <<<"$mcp" || fail "the mcp service.name must be amr-fleet-control-mcp"
@@ -171,4 +175,21 @@ python3 -c 'import sys, yaml; o = yaml.safe_load(sys.stdin)["config"]["origins"]
   <<<"$cors" || fail "cors origins list"
 render --set kongPlugins.cors.enabled=true --set 'kongPlugins.cors.origins={http://a.invalid,*}' >/dev/null 2>&1 \
   && fail "cors origins list with '*' rendered"
+# ruling P3-R16 / plan 04 P4-R18 (lesson b): ENVIRONMENT (deployment.environment.name on every span and metric) comes
+# from the value `environment` (asrs-control's key and default) for api, mcp and a2a, so the cluster never reports "local".
+env_of() { # <component> <values...>: the ENVIRONMENT the component's container gets
+  local comp="$1"; shift
+  if [ "$comp" = api ]; then
+    helm template amr-fleet-control "$chart_dir" "${all[@]}" "$@" --show-only templates/configmap.yaml \
+      | python3 -c 'import sys, yaml; print(yaml.safe_load(sys.stdin)["data"].get("ENVIRONMENT", "<unset>"))'
+  else
+    helm template amr-fleet-control "$chart_dir" "${all[@]}" "$@" --show-only "templates/$comp-deployment.yaml" \
+      | python3 -c 'import sys, yaml; d = yaml.safe_load(sys.stdin); print(next((e.get("value") for e in d["spec"]["template"]["spec"]["containers"][0]["env"] if e["name"] == "ENVIRONMENT"), "<unset>"))'
+  fi
+}
+for c in api mcp a2a; do
+  got="$(env_of "$c")"; [ "$got" = production ] || fail "$c ENVIRONMENT is '$got' by default, want 'production'"
+  got="$(env_of "$c" --set environment=staging)"; [ "$got" = staging ] || fail "$c ENVIRONMENT is '$got' with environment=staging"
+done
+render --set 'extraEnv[0].name=ENVIRONMENT' --set 'extraEnv[0].value=x' >/dev/null 2>&1 && fail "renders an ENVIRONMENT extraEnv"
 echo "render_test: PASS"

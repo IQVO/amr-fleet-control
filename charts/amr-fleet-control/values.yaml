@@ -92,6 +92,10 @@ otel:
 # the boolean true, so a dict map reaches the ConfigMap with "true": <y> and every node loses its y coordinate.
 map: ""
 
+# ruling P3-R16 / plan 04 P4-R18: ENVIRONMENT, deployment.environment.name on every span and metric of api, mcp and a2a
+# (the binaries default to "local"). Labels telemetry only; no behaviour depends on it. asrs-control's key and default.
+environment: "production"
+
 extraEnv: []
 
 # carry (plan 04 Task 23 review lesson d): the boot runs the migrations, loads the map and dials Kafka and MQTT

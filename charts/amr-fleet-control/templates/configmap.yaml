@@ -28,6 +28,7 @@ data:
   ROBOT_BLOCKED_TIMEOUT_SECONDS: {{ .Values.config.robotBlockedTimeoutSeconds | quote }}
   ROBOT_OFFLINE_TIMEOUT_SECONDS: {{ .Values.config.robotOfflineTimeoutSeconds | quote }}
   SERVICE_VERSION: {{ include "amr-fleet-control.serviceVersion" . | quote }}
+  ENVIRONMENT: {{ .Values.environment | quote }}
   {{- if .Values.otel.enabled }}
   OTEL_SERVICE_NAME: {{ .Values.otel.serviceName | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.otel.endpoint | quote }}

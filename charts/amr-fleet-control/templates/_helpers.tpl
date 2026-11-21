@@ -125,7 +125,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- fail "kongPlugins.opentelemetry.enabled needs kongPlugins.opentelemetry.tracesEndpoint (warehouse-infra's _platform.yaml supplies it)" }}
 {{- end }}
 {{- range .Values.extraEnv }}
-{{- if or (hasSuffix "_MODE" .name) (eq .name "OTEL_EXPORTER_OTLP_ENDPOINT") (eq .name "OTEL_SERVICE_NAME") (eq .name "DATABASE_URL") }}
+{{- if or (hasSuffix "_MODE" .name) (eq .name "OTEL_EXPORTER_OTLP_ENDPOINT") (eq .name "OTEL_SERVICE_NAME") (eq .name "DATABASE_URL") (eq .name "MIGRATIONS_DATABASE_URL") (eq .name "ENVIRONMENT") }}
 {{- fail (printf "extraEnv must not set %s: the chart renders it (or it does not exist)" .name) }}
 {{- end }}
 {{- end }}

@@ -41,7 +41,7 @@ spec:
               containerPort: {{ .Values.a2a.service.targetPort }}
               protocol: TCP
           # Exactly what cmd/a2a reads (Task 19): A2A_ADDR, A2A_AGENT_URL, LOG_LEVEL, AMR_MAP_FILE, SERVICE_VERSION,
-          # OTEL_*, DATABASE_URL, MIGRATIONS_DATABASE_URL. The api ConfigMap is NOT mounted as env, so no
+          # OTEL_*, ENVIRONMENT, DATABASE_URL, MIGRATIONS_DATABASE_URL. The api ConfigMap is NOT mounted as env, so no
           # Kafka, MQTT or relay variable reaches it.
           env:
             - name: A2A_ADDR
@@ -54,6 +54,9 @@ spec:
               value: {{ .Values.config.mapFile | quote }}
             - name: SERVICE_VERSION
               value: {{ include "amr-fleet-control.serviceVersion" . | quote }}
+            # ruling P3-R16 / P4-R18: deployment.environment.name (read by the telemetry adapter).
+            - name: ENVIRONMENT
+              value: {{ .Values.environment | quote }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.endpoint | quote }}
