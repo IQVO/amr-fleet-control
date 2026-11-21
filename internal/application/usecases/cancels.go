@@ -34,6 +34,19 @@ func (u *unit) cancelResends() error {
 	return nil
 }
 
+// failActive is the tick's and the recovery's way to end a mission: a CANCEL_REQUESTED leg ends
+// through endCancel (CANCELLED, with the robot's reported load), every other mission fails with
+// reason (decision D17).
+//
+// carry (Task 8 review): mission.Fail derives container_on_robot from PICKED_UP only, so a
+// cancel-requested leg the robot already carries would otherwise report false.
+func (u *unit) failActive(ms *mission.Mission, reason mission.Reason, robotErr string, cancel bool) error {
+	if ms.Status() == mission.CancelRequested {
+		return u.endCancel(ms, u.robots[ms.Robot().Key()], cancel)
+	}
+	return u.fail(ms, reason, robotErr, cancel)
+}
+
 // endCancel ends a CANCEL_REQUESTED leg CANCELLED without the robot's answer, passing the load
 // the robot last reported (never container_on_robot=false blindly). cancel sends its cancelOrder
 // again; otherwise the robot stops awaiting it and, when it is online and still reports a pending

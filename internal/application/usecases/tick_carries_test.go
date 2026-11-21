@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
 	"github.com/IQVO/amr-fleet-control/internal/application/vda"
 	"github.com/IQVO/amr-fleet-control/internal/domain/mission"
 	"github.com/IQVO/amr-fleet-control/internal/domain/robot"
@@ -145,5 +146,79 @@ func TestTheResendLimitReportsTheRobotsRejection(t *testing.T) {
 	lf := ofType[mission.LegFailed](h.events.All())
 	if len(lf) != 1 || lf[0].LegID != v.LegID || lf[0].Reason != mission.ReasonOrderRejected || lf[0].RobotError != "INVALID_ORDER" {
 		t.Fatalf("LegFailed = %+v", lf)
+	}
+}
+
+// cancelling: R1 runs leg C1, fleet control asked it to cancel and it reported C1 as its load
+// without answering the cancel yet.
+func cancelling(t *testing.T, tune func(*usecases.Config)) (*harness, usecases.LegView) {
+	t.Helper()
+	h := newHarness(t, floor(t), tune)
+	h.online("R1", "P1", 90)
+	v := h.leg("C1", "ST1", "ASRS1-IN1")
+	h.ack("R1")
+	if _, now, err := h.svc.CancelLeg(ctx, "AMR1", v.LegID); err != nil || now {
+		t.Fatalf("cancel = %v %v", now, err)
+	}
+	h.report("R1", func(r *robot.Report) { r.LoadIDs = []string{"C1"} })
+	return h, v
+}
+
+// carry (Task 8 review): the offline timeout ends a CANCEL_REQUESTED leg CANCELLED with the robot's
+// last reported load (not ROBOT_OFFLINE with container_on_robot=false), sending nothing offline.
+func TestTheOfflineTimeoutEndsACancelRequestedLegCancelledWithTheRobotsLoad(t *testing.T) {
+	h, v := cancelling(t, nil)
+	h.tick(91 * time.Second) // stale before any cancel re-send
+	h.tick(61 * time.Second)
+	lf := ofType[mission.LegFailed](h.events.All())
+	if len(lf) != 1 || lf[0].LegID != v.LegID || lf[0].Reason != mission.ReasonCancelled || !lf[0].ContainerOnRobot {
+		t.Fatalf("LegFailed = %+v", lf)
+	}
+	if ia := h.instants("R1"); len(ia) != 1 {
+		t.Fatalf("instant actions = %+v (nothing is sent to an offline robot)", ia)
+	}
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.MissionID() != "" || r.AwaitingAction() != "" {
+		t.Fatalf("robot = %+v", r.Snapshot())
+	}
+}
+
+// carry (Task 8 review): the blocked timeout ends a CANCEL_REQUESTED leg CANCELLED with the robot's
+// load and sends its cancelOrder again (same action id), which the robot must still answer.
+func TestTheBlockedTimeoutEndsACancelRequestedLegCancelledWithTheRobotsLoad(t *testing.T) {
+	h, v := cancelling(t, func(c *usecases.Config) { c.ResendAfter = time.Hour })
+	h.report("R1", func(r *robot.Report) {
+		r.Errors = []robot.Error{{Type: robot.ErrTypeBlocked, Level: robot.LevelCritical}}
+	})
+	h.tick(61 * time.Second)
+	lf := ofType[mission.LegFailed](h.events.All())
+	if len(lf) != 1 || lf[0].Reason != mission.ReasonCancelled || !lf[0].ContainerOnRobot || lf[0].RobotError != "" {
+		t.Fatalf("LegFailed = %+v", lf)
+	}
+	ia := h.instants("R1")
+	if len(ia) != 2 || ia[1].ID != v.LegID+"-cancel" || ia[1].Type != vda.CancelOrder {
+		t.Fatalf("instant actions = %+v", ia)
+	}
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.AwaitingAction() != v.LegID+"-cancel" {
+		t.Fatalf("robot = %+v", r.Snapshot())
+	}
+}
+
+// carry (Task 8 review): Recover ends a CANCEL_REQUESTED leg of a retired map version CANCELLED
+// with the robot's load and cancels its order again.
+func TestRecoverEndsACancelRequestedLegOfARetiredVersionCancelled(t *testing.T) {
+	h := newHarness(t, floor(t), nil)
+	h.online("R1", "P1", 90)
+	h.report("R1", func(r *robot.Report) { r.LoadIDs = []string{"C9"} })
+	old, _ := mission.NewLeg(mission.LegSpec{ID: "leg-old", MapVersion: "v0", ContainerID: "C9", From: "ST1", To: "ST2", PickupNode: "ST1", DropNode: "ST2", At: t0})
+	_, _ = old.Assign(rid("R1"), []mission.Step{{Node: "ST1", Action: mission.ActionPick}, {Node: "E", Edge: "E-ST1"}, {Node: "ST2", Edge: "x", Action: mission.ActionDrop}}, 0, t0)
+	_, _, _ = old.RequestCancel(t0)
+	h.must(h.missions.Insert(ctx, old))
+	h.must(h.svc.Recover(ctx))
+	lf := ofType[mission.LegFailed](h.events.All())
+	if len(lf) != 1 || lf[0].LegID != "leg-old" || lf[0].Reason != mission.ReasonCancelled || !lf[0].ContainerOnRobot {
+		t.Fatalf("LegFailed = %+v", lf)
+	}
+	if ia := h.instants("R1"); len(ia) != 2 || ia[0].ID != "leg-old-cancel" || ia[1].Type != vda.StateRequest {
+		t.Fatalf("instant = %+v", ia)
 	}
 }

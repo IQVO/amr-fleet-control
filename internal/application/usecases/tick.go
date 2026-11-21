@@ -37,7 +37,7 @@ func (s *Service) Recover(ctx context.Context) error {
 			if ms.MapVersion() == s.m.Version() {
 				continue
 			}
-			if err := u.fail(ms, mission.ReasonMapVersionRetired, "", ms.Active()); err != nil {
+			if err := u.failActive(ms, mission.ReasonMapVersionRetired, "", ms.Active()); err != nil {
 				return err
 			}
 		}
@@ -68,12 +68,12 @@ func (u *unit) timeouts() error {
 		}
 		switch {
 		case r.State() == robot.Stopped && u.now.Sub(r.OfflineSince()) > u.s.cfg.OfflineTimeout:
-			if err := u.fail(ms, mission.ReasonRobotOffline, "", false); err != nil {
+			if err := u.failActive(ms, mission.ReasonRobotOffline, "", false); err != nil {
 				return err
 			}
 		case r.State() == robot.Held && u.now.Sub(r.HeldSince()) > u.s.cfg.BlockedTimeout:
 			e, _ := r.Report().Blocking()
-			if err := u.fail(ms, mission.ReasonRobotBlocked, e, true); err != nil {
+			if err := u.failActive(ms, mission.ReasonRobotBlocked, e, true); err != nil {
 				return err
 			}
 		}
@@ -98,7 +98,7 @@ func (u *unit) resends() error {
 		}
 		if ms.Resends() >= u.s.cfg.ResendLimit {
 			// carry (Task 8 review): robot_error is the robot's newest rejection, if it lists one (D16).
-			if err := u.fail(ms, mission.ReasonOrderRejected, lastError(r.Report(), true), true); err != nil {
+			if err := u.failActive(ms, mission.ReasonOrderRejected, lastError(r.Report(), true), true); err != nil {
 				return err
 			}
 			continue
@@ -127,7 +127,7 @@ func (u *unit) deadlockTimeouts() error {
 			continue
 		}
 		if ms := u.youngest(cycle); ms != nil {
-			if err := u.fail(ms, mission.ReasonRobotBlocked, "", true); err != nil {
+			if err := u.failActive(ms, mission.ReasonRobotBlocked, "", true); err != nil {
 				return err
 			}
 		}

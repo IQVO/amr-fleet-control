@@ -19,8 +19,6 @@ func (u *unit) order(ms *mission.Mission) {
 }
 
 // resend queues the current order message again with the same orderUpdateId.
-//
-//nolint:unused // the Tick (Task 9) resends unacknowledged orders; Task 9 drops this directive.
 func (u *unit) resend(ms *mission.Mission) {
 	o := buildOrder(u.s.m, ms)
 	ms.Resent(u.now)
