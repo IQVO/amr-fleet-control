@@ -1,0 +1,83 @@
+{{- if .Values.a2a.enabled }}
+{{- include "amr-fleet-control.require" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "amr-fleet-control.a2aFullname" . }}
+  labels:
+    {{- include "amr-fleet-control.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a2a
+spec:
+  replicas: {{ .Values.a2a.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "amr-fleet-control.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: a2a
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "amr-fleet-control.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: a2a
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "amr-fleet-control.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: a2a
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "amr-fleet-control.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/a2a"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.a2a.service.targetPort }}
+              protocol: TCP
+          # Exactly what cmd/a2a reads (Task 19): A2A_ADDR, A2A_AGENT_URL, LOG_LEVEL, AMR_MAP_FILE, SERVICE_VERSION,
+          # OTEL_*, DATABASE_URL, MIGRATIONS_DATABASE_URL. The api ConfigMap is NOT mounted as env, so no
+          # Kafka, MQTT or relay variable reaches it.
+          env:
+            - name: A2A_ADDR
+              value: {{ .Values.a2a.httpAddr | quote }}
+            - name: A2A_AGENT_URL
+              value: {{ .Values.a2a.agentUrl | default (printf "http://%s.%s.svc.cluster.local:%v/" (include "amr-fleet-control.a2aFullname" .) .Release.Namespace .Values.a2a.service.port) | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            - name: AMR_MAP_FILE
+              value: {{ .Values.config.mapFile | quote }}
+            - name: SERVICE_VERSION
+              value: {{ include "amr-fleet-control.serviceVersion" . | quote }}
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ printf "%s-a2a" .Values.otel.serviceName | quote }}
+            {{- end }}
+            {{- include "amr-fleet-control.databaseEnv" . | nindent 12 }}
+            {{- range .Values.a2a.extraEnv }}
+            - {{ toYaml . | nindent 14 | trim }}
+            {{- end }}
+          volumeMounts:
+            - name: map
+              mountPath: {{ dir .Values.config.mapFile }}
+              readOnly: true
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.a2a.resources | nindent 12 }}
+      volumes:
+        {{- include "amr-fleet-control.mapVolume" . | nindent 8 }}
+{{- end }}

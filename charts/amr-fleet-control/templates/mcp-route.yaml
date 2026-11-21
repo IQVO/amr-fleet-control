@@ -1,0 +1,40 @@
+{{- if and .Values.mcp.enabled .Values.mcp.route.enabled -}}
+{{- /*
+/api/mcp/amr-fleet-control -> Service amr-fleet-control-mcp:8090, prefix rewritten to /mcp. /healthz stays
+off the host. Nothing on the route checks credentials (fleet rule).
+*/ -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "amr-fleet-control.mcpFullname" . }}
+  labels:
+    {{- include "amr-fleet-control.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+  {{- with include "amr-fleet-control.kongPluginNames" . }}
+  annotations:
+    konghq.com/plugins: {{ . | quote }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- range .Values.mcp.route.parentRefs }}
+    - name: {{ .name }}
+      namespace: {{ .namespace }}
+      {{- if .sectionName }}
+      sectionName: {{ .sectionName }}
+      {{- end }}
+    {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.mcp.route.path }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /mcp
+      backendRefs:
+        - name: {{ include "amr-fleet-control.mcpFullname" . }}
+          port: {{ .Values.mcp.service.port }}
+{{- end }}

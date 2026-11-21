@@ -1,0 +1,174 @@
+# amr-fleet-control: the api Deployment (REST :8080, the one MQTT fleet link, the outbox relay),
+# optional read-only mcp (:8090) and a2a (:8093) Deployments, a ConfigMap (env + map.yaml), a Secret
+# for the database, and default-off Gateway API routes with their Kong plugins. Postgres, Kafka and
+# MQTT are mandatory; the chart refuses to render without them.
+
+# Exactly ONE api replica: amr-fleet-control is the single traffic controller of its fleet
+# (decision D18, ADR 0002). The chart refuses any other value.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/iqvo/amr-fleet-control
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# Longer than the HTTP drain (10 s) plus a relay pass and the MQTT disconnect.
+terminationGracePeriodSeconds: 30
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+database:
+  url: ""
+  existingSecret: ""
+  existingSecretKey: "DATABASE_URL"
+  migrationsExistingSecretKey: "MIGRATIONS_DATABASE_URL"
+
+kafka:
+  brokers: ""
+
+mqtt:
+  url: tcp://mosquitto.warehouse-systems.svc.cluster.local:1883
+  clientId: amr-fleet-control
+
+config:
+  addr: ":8080"
+  logLevel: info
+  mapFile: /etc/amr-fleet-control/map.yaml
+  outboxIntervalMs: "250"
+  outboxBatch: "100"
+  outboxMaxAttempts: "20"
+  chargeLowPercent: "20"
+  chargeResumePercent: "80"
+  releaseAheadNodes: "2"
+  nodeToleranceMetres: "0.25"
+  robotStaleAfterSeconds: "90"
+  orderResendAfterSeconds: "5"
+  orderResendLimit: "3"
+  rerouteAfterSeconds: "10"
+  deadlockTimeoutSeconds: "60"
+  robotBlockedTimeoutSeconds: "60"
+  robotOfflineTimeoutSeconds: "60"
+
+# Observability (ADR 0005): OTLP/gRPC to the fleet Collector. enabled=false renders no OTEL_* variable and
+# the binaries keep telemetry off (an empty endpoint is off). The mcp and a2a components get
+# "<serviceName>-mcp" / "<serviceName>-a2a". SERVICE_VERSION is the image tag (appVersion when empty).
+otel:
+  enabled: true
+  endpoint: "otel-collector.observability.svc.cluster.local:4317"
+  serviceName: "amr-fleet-control"
+
+# Rendered into the ConfigMap as map.yaml (decision D1). Empty = the chart's files/map.yaml, a byte copy of
+# config/map.example.yaml (the floor of the emulator's example world; the render test keeps them equal). Replace it
+# per environment with the whole map file as a string (`map: |` or `--set-file map=<file>`); a new `version` fails
+# the open legs of the old one at the next start (decision D14).
+# deviation (Task 21): a string, not a YAML dict. Helm parses values as YAML 1.1, which reads the node key `y` as
+# the boolean true, so a dict map reaches the ConfigMap with "true": <y> and every node loses its y coordinate.
+map: ""
+
+extraEnv: []
+
+livenessProbe:
+  httpGet: {path: /healthz, port: http}
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet: {path: /readyz, port: http}
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+resources:
+  limits: {cpu: 500m, memory: 256Mi}
+  requests: {cpu: 50m, memory: 64Mi}
+
+# The api through the gateway: /api/amr-fleet-control, prefix stripped. Default off; warehouse-infra's values
+# switch it on with the parentRefs of _platform.yaml.
+gatewayApi:
+  enabled: false
+  parentRefs: []
+  hosts:
+    - path: /api/amr-fleet-control
+      pathType: PathPrefix
+  stripPath: true
+
+# Read-only MCP server (cmd/mcp, ADR 0006). Reads Postgres and the map; never Kafka or MQTT.
+mcp:
+  enabled: false
+  replicaCount: 1
+  httpAddr: ":8090"
+  service:
+    type: ClusterIP
+    port: 8090
+    targetPort: 8090
+  route:
+    enabled: false
+    path: "/api/mcp/amr-fleet-control"
+    parentRefs: []
+  extraEnv: []
+  resources:
+    limits: {cpu: 250m, memory: 128Mi}
+    requests: {cpu: 50m, memory: 64Mi}
+
+# Read-only A2A agent (cmd/a2a, ADR 0006). agentUrl empty = this release's in-cluster Service.
+a2a:
+  enabled: false
+  replicaCount: 1
+  httpAddr: ":8093"
+  agentUrl: ""
+  service:
+    type: ClusterIP
+    port: 8093
+    targetPort: 8093
+  route:
+    enabled: false
+    path: "/api/a2a/amr-fleet-control"
+    parentRefs: []
+  extraEnv: []
+  resources:
+    limits: {cpu: 250m, memory: 128Mi}
+    requests: {cpu: 50m, memory: 64Mi}
+
+# Kong plugins owned by this chart (fleet decision 2026-10-13), attached to every enabled HTTPRoute.
+# All default off; warehouse-infra switches them on. NO auth plugin, ever (fleet rule).
+kongPlugins:
+  cors:
+    enabled: false
+    origin: "http://localhost"
+  prometheus:
+    enabled: false
+  opentelemetry:
+    enabled: false
+    tracesEndpoint: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
