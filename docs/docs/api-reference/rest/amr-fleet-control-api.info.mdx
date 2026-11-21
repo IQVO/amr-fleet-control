@@ -1,0 +1,70 @@
+---
+id: amr-fleet-control-api
+title: "amr-fleet-control API"
+description: "The subsystem-controller interface of **amr-fleet-control** (WCS tier, Generic; ADR 0001, ADR 0004), called by"
+sidebar_label: Introduction
+sidebar_position: 0
+hide_title: true
+custom_edit_url: null
+---
+
+import ApiLogo from "@theme/ApiLogo";
+import Heading from "@theme/Heading";
+import SchemaTabs from "@theme/SchemaTabs";
+import TabItem from "@theme/TabItem";
+import Export from "@theme/ApiExplorer/Export";
+
+<span
+  className={"theme-doc-version-badge badge badge--secondary"}
+  children={"Version: 1.0.0"}
+>
+</span>
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"amr-fleet-control API"}
+>
+</Heading>
+
+
+
+The subsystem-controller interface of **amr-fleet-control** (WCS tier, Generic; ADR 0001, ADR 0004), called by
+material-flow-control (WCS context map relationship 4, the same shape as asrs-control's relationship 5). A leg is
+accepted or refused at once (`202` or `422`); its progress is reported only by events on
+`warehouse.amr-fleet-control.events` (LegAssigned, ContainerPickedUp, LegCompleted, LegFailed). No VDA 5050 order,
+node or edge appears here.
+
+**Idempotency.** Every POST requires `Idempotency-Key` (1-128 characters). The first request executes; a retry
+with the same key and body returns the stored answer with `Idempotency-Replayed: true`; the same key with another
+body is `409 idempotency-key-reused`. Only 2xx and FINAL refusals are stored (24 hours): `bad-request`,
+`invalid-parameter`, `leg-not-found`. RETRYABLE refusals release the key, so a retry under the same key executes
+again: `fleet-not-found`, `robot-not-found`, `unknown-handoff-point`, `handoff-unreachable` (the map file and the
+robot registry can change inside the window), `container-busy`, `fleet-unavailable`, `leg-not-cancellable`,
+`leg-ended`.
+
+**Errors** are RFC 9457 `application/problem+json` with a stable `code`. No authentication (fleet rule).
+
+
+<div
+  style={{"display":"flex","flexDirection":"column","marginBottom":"var(--ifm-paragraph-margin-bottom)"}}
+>
+  <h3
+    style={{"marginBottom":"0.25rem"}}
+  >
+    Contact
+  </h3><span>
+    amr-fleet-control maintainers: [amr-fleet-control@iqvo.example.com](mailto:amr-fleet-control@iqvo.example.com)
+  </span><span>
+    URL: [https://github.com/IQVO/amr-fleet-control](https://github.com/IQVO/amr-fleet-control)
+  </span>
+</div><div
+  style={{"marginBottom":"var(--ifm-paragraph-margin-bottom)"}}
+>
+  <h3
+    style={{"marginBottom":"0.25rem"}}
+  >
+    License
+  </h3>
+</div>
+      

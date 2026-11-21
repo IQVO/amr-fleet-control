@@ -1,85 +1,101 @@
-# warehouse-harness-template
+# amr-fleet-control
 
-Canonical `harness-template: v4` for the [warehouse-systems](https://github.com/IQVO)
-fleet's Go bounded-context services: `Makefile`, CI workflow, lefthook
-hooks, linter/mutation-testing config, architecture fitness tests
-(hexagonal dependency rules + fleet-wide invariants learned from real
-incidents), `.claude/` guides (rules, skills, commands, subagents), and
-`.claude/memory/`, `tools/harness_probe.py`, `benchmarks/wms-bench/` —
-the v4 pieces that close the gaps found comparing this harness against
-Google-Research's Harness² (see HARNESS.md's "Harness² comparison (v4)").
-
-This is a **template, not a runnable service** — it has no domain code,
-no `cmd/`, no OpenAPI spec. It exists to answer one question for every
-new (or drifting) bounded-context repo in the fleet: **what harness
-should this repo have, and why?**
-
-Start with [`HARNESS.md`](HARNESS.md) — it documents every sensor's
-purpose, cost, and lifecycle position, and the specific incident each
-architecture fitness test was written to prevent from recurring.
-
-## Instantiating this template into a new (or existing) repo
-
-```bash
-git clone https://github.com/IQVO/warehouse-harness-template <new-repo>
-cd <new-repo>
-rm -rf .git && git init
-bash scripts/new-service.sh <service-name> <richest-domain-aggregate-pkg> [<wms|wes> <event-context>]
-```
-
-Kafka-publishing/consuming services pass the last two arguments: the
-script then generates the fleet-mandatory CloudEvents 1.0 helper
-(`internal/adapters/kafka/cloudevents/`). CloudEvents is the only event
-envelope in this fleet — there is no flat/dual mode to configure.
-
-See `scripts/new-service.sh`'s header comment, or `HARNESS.md`'s
-"Instantiating this template" section, for the full checklist —
-substitution is only step one; `.claude/rules/*.md` content and
-`.gremlins.yaml`'s measured thresholds still need real code to fill in.
-A fresh scaffold also ships the runtime-binary and repo-root layout sensors
-(`internal/architecture/`) and a generated `Dockerfile`, `.dockerignore` and
-`docs/before-first-release.md`: work through that checklist before the first
-release.
+`amr-fleet-control` is the VDA 5050 master control of the warehouse-systems WCS tier: it accepts transport legs from
+material-flow-control over the subsystem-controller REST interface, assigns each leg to one robot by distance,
+battery and availability, releases the route as VDA 5050 base and horizon while reserving every node and edge for
+exactly one robot, detects and resolves deadlocks, sends robots to charge and to park, and keeps a registry of every
+robot's connection, state, errors and factsheet. It does not own which container moves when (material-flow-control),
+container contents (inventory-storage), the AS/RS (asrs-control) or the building's travel graph (facility-layout).
+Classification: Generic, built behind the subsystem-controller interface so a vendor fleet manager could replace it.
 
 ## Disclaimer
 
-This project is a domain-driven design study. It is not associated with,
-endorsed by or affiliated with any company, and it uses no company's code,
-data, logos or trademarks. All names, figures and examples are illustrative
-or synthetic.
+This project is a domain-driven design study. It is not associated with, endorsed by or affiliated with any company, and it uses no company's code, data, logos or trademarks. All names, figures and examples are illustrative or synthetic.
 
 ## Documentation
 
-The template's own harness reference is [HARNESS.md](HARNESS.md) (every
-sensor's purpose, cost and lifecycle position). The fleet README standard and
-the other fleet rules this template delivers live in warehouse-docs
-(<https://iqvo.github.io/warehouse-docs/>) under agents/fleet — this repo
-carries their canonical copies under `.claude/rules/fleet/`.
+The site is https://iqvo.github.io/amr-fleet-control/ (built from `docs/`, published from `main`). The strategic
+design is warehouse-docs `docs/wcs/` (WCS section).
 
-## Agent authority fitness tests
+| Page | What it holds |
+| --- | --- |
+| `docs/docs/overview/` | introduction, architecture, quickstart |
+| `docs/docs/operations/` | configuration, runbook, observability, troubleshooting |
+| `docs/docs/ddd/` | ubiquitous language, use cases, the ddd-crew pack |
+| `docs/adr/` | ADRs 0001-0006 |
+| `apis/openapi.yaml` | the REST subsystem-controller interface (relationship 4) |
+| `apis/asyncapi.yaml` | the seven published events |
+| `config/map.example.yaml` | the map file format |
 
-`internal/architecture/mcp_authority_fitness_test.go` is the portable, static
-check for the fleet rule `agent-authority`: every MCP tool and A2A skill
-declares a level L1..L4, write tools are at least L3, and an MCP server offers
-at least one resource and one prompt. It skips on a service with no MCP/A2A
-adapter. A repo not yet rolled parks only the resource/prompt check with a
-one-line file `internal/adapters/inbound/mcp/.agent-surface-pending`; L4
-needs a `//authority:L4 ADR-<n> ...` comment. Details and the accepted
-declaration shape: HARNESS.md, "Agent authority declarations". The file is
-copied per repo in a rollout wave (it is not in `MANAGED`).
+## Architecture
 
-## Local development / quality gate
+Hexagonal, enforced by `internal/architecture/architecture_test.go` (arch-go):
 
-`make check` runs the template's self-test (the same target new services
-inherit); lefthook runs fmt/lint/vet on pre-commit and the full check on
-pre-push.
+    cmd/api, cmd/mcp, cmd/a2a       composition roots (REST + fleet link + relay; read-only MCP; read-only A2A)
+    internal/domain/                fleetmap, robot, mission, capacity, dispatch
+    internal/application/           ports, vda, usecases (one Service, every write in one fleet unit of work)
+    internal/adapters/inbound/      http, mcp, a2a, requestlog
+    internal/adapters/vda5050, mqtt VDA 5050 v3 codec and the one ordered fleet link
+    internal/adapters/outbound/     postgres, events, outbox relay, kafka, telemetry, memory (test doubles), system
+
+## Domain events / Integration
+
+Publishes CloudEvents 1.0 (`com.warehouse.wes.amr-fleet-control.<entity>.<EventName>`) to
+`warehouse.amr-fleet-control.events` and `warehouse.amr-fleet-control.analytics`, for example
+`com.warehouse.wes.amr-fleet-control.mission.LegCompleted`. Seven types: LegAssigned, ContainerPickedUp,
+LegCompleted, LegFailed (mission), RobotStateChanged (robot), FleetCapacityChanged (fleet), DeadlockDetected
+(fleetmap). Consumes nothing from Kafka. Speaks VDA 5050 v3.0.0 to the robots on `vda5050/v3/<manufacturer>/<serialNumber>/<topic>`.
+
+## Running it
+
+`cmd/api` (HTTP on `:8080`): `DATABASE_URL`, `KAFKA_BROKERS`, `MQTT_URL` and `AMR_MAP_FILE` are required; every
+other variable and its default is in `docs/docs/operations/configuration.md`. `cmd/mcp` (`:8090`) and `cmd/a2a`
+(`:8093`) need `DATABASE_URL` and `AMR_MAP_FILE`; the agent also `A2A_AGENT_URL`.
+
+## Observability
+
+OpenTelemetry traces and metrics over OTLP/gRPC (`OTEL_EXPORTER_OTLP_ENDPOINT`; empty = off), `trace_id`/`span_id`
+on every JSON log line, and the counter `amr_fleet_control.legs.ended` (ADR 0005).
+
+## API
+
+| Route | Purpose |
+| --- | --- |
+| `POST /fleets/{fleetId}/legs` | request a leg (202, or 422 at once) |
+| `GET /fleets/{fleetId}/legs/{legId}` | read a leg |
+| `POST /fleets/{fleetId}/legs/{legId}/cancellation` | cancel (200 cancelled, 202 robot asked) |
+| `GET /fleets/{fleetId}` | the fleet: map version, handoff points, robots, capacity |
+| `GET /fleets/{fleetId}/robots/{manufacturer}/{serialNumber}` | one robot |
+
+Every POST takes `Idempotency-Key`; 2xx and FINAL refusals replay for 24 hours with `Idempotency-Replayed: true`,
+RETRYABLE refusals release the key. Errors are `application/problem+json` with a `code`. No authentication (fleet
+rule). MCP at `/mcp` (`:8090`), A2A at `/a2a` (`:8093`), both read-only.
+
+## Helm chart
+
+`charts/amr-fleet-control` (lands in Task 21; not in the repository yet): the api Deployment (exactly one replica,
+Recreate), optional mcp and a2a Deployments, Services, a ConfigMap with the environment and `map.yaml`, HTTPRoutes for
+`/api/amr-fleet-control`, `/api/mcp/amr-fleet-control` and `/api/a2a/amr-fleet-control`, and the three default-off
+KongPlugins.
+
+## Local development
+
+`make check-fast`, `make check`, `make check-all`, `make integration` (Docker; the e2e test also needs the emulator
+image named by `EQUIPMENT_EMULATOR_IMAGE`, default `equipment-emulator:e2e`:
+`git -C <equipment-emulator checkout> archive v0.1.0 | docker build -t equipment-emulator:e2e -`, because GHCR's
+`v0.1.0` image is amd64-only), `make mutation`, and `cd docs && npm ci && npm run build` for the site.
 
 ## Tests
 
-The template ships the architecture fitness tests and harness sensors a new
-service starts from (see HARNESS.md); CI runs the self-test workflow on every
-PR.
+Unit and BDD (`features/amr_fleet_control.feature`, `make bdd`), integration (`//go:build integration`: Postgres
+repositories, the MQTT link against Mosquitto, the Kafka relay sink against Kafka, the end-to-end test against the
+emulator robots), chart tests (`render_test.sh`, `test_service_selectors.py`, `test_kong_config.py`; they land with
+the chart in Task 21), mutation (gremlins, thresholds in `.gremlins.yaml`, measured in Task 22).
+
+## Architecture Decision Records
+
+6 ADRs, indexed in `docs/adr/index.md`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+See `LICENSE`.
