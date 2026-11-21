@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -39,19 +40,34 @@ type FleetLink struct {
 
 var uplinkTopics = []string{"state", "connection", "factsheet"}
 
+// subscribeWait bounds how long NewFleetLink waits for the first subscription round (three
+// subscriptions of at most 10 s each).
+const subscribeWait = 35 * time.Second
+
 // NewFleetLink connects and subscribes on every (re)connection; messages that arrive before
-// Start wait in the inbox.
+// Start wait in the inbox. It returns once the first subscription round is done: paho runs
+// onConnect on its own goroutine, so without the wait a robot message published right after
+// NewFleetLink returned could reach the broker before the subscription and be lost.
 func NewFleetLink(brokerURL, clientID string, up Uplink, log *slog.Logger) (*FleetLink, error) {
 	l := newFleetLink(up, log)
+	subscribed := make(chan struct{})
+	var first sync.Once
 	c, err := connect(brokerURL, clientID, func(c pahomqtt.Client) {
 		for _, name := range uplinkTopics {
 			if err := subscribe(c, vda5050.Topic("+", "+", name), l.handler()); err != nil {
 				log.Warn("mqtt subscribe failed; retried on the next reconnect", "topic", name, "error", err)
 			}
 		}
+		first.Do(func() { close(subscribed) })
 	})
 	if err != nil {
 		return nil, err
+	}
+	select {
+	case <-subscribed:
+	case <-time.After(subscribeWait):
+		c.Disconnect(0)
+		return nil, fmt.Errorf("mqtt subscribe %s as %s: no subscription round within %s", brokerURL, clientID, subscribeWait)
 	}
 	l.client = c
 	l.pub = func(topic string, b []byte) error {
