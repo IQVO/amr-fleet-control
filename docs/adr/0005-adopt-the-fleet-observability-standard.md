@@ -21,10 +21,14 @@ outbound-shipping ADR 0008 is the reference adoption (Tier 1 identical everywher
    `amr-fleet-control`, `amr-fleet-control-mcp`, `amr-fleet-control-a2a`.
 3. Tier 2: `amr_fleet_control.legs.ended` (`{leg}`), attributes `outcome` and `reason`, recorded through
    `ports.Metrics` in the after-commit hook of the unit of work that ended the leg.
-4. Chart: `otel.{enabled,endpoint,serviceName}` and `serviceVersion` (Task 21); no binary reads an `ENVIRONMENT`
-   variable, so the chart renders none.
+4. Chart: `otel.{enabled,endpoint,serviceName}` and `serviceVersion` (Task 21). No behaviour depends on
+   `ENVIRONMENT`; `telemetry.Setup` reads it only to label telemetry as the resource attribute
+   `deployment.environment.name` (default `local`), as in outbound-shipping and material-flow-control.
 
 ## Consequences
 
-The outbox rows carry `traceparent` whenever a request span is active, so a leg request's trace continues into
-Kafka. Robot messages start no trace (MQTT carries no W3C context).
+Only the facts written in a request's own unit of work carry that request's `traceparent` (appended after the
+CloudEvents `content-type` header and stored with the outbox row). The tick and robot-message units run without a
+span and store none, so a consumer's span for those facts is a root. The outbox relay forwards the stored headers
+as they are and starts no publish span of its own. MQTT carries no W3C trace context, so robot messages start no
+trace.
