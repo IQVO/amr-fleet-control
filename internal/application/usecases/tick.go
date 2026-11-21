@@ -19,6 +19,9 @@ func (s *Service) Tick(ctx context.Context) error {
 		if err := u.resends(); err != nil {
 			return err
 		}
+		if err := u.cancelResends(); err != nil { // carry (Task 8 review)
+			return err
+		}
 		u.waits()
 		if err := u.deadlockTimeouts(); err != nil {
 			return err

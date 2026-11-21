@@ -68,7 +68,8 @@ type LegSpec struct {
 }
 
 // State is the persisted form. SeenUpdate is the highest orderUpdateId a robot state showed (-1
-// none); OrderStart is the route index of the first node of the latest order message.
+// none); OrderStart is the route index of the first node of the latest order message. On a
+// CANCEL_REQUESTED leg SentAt and Resends count its cancelOrder messages instead of the order's.
 type State struct {
 	ID                                                                 string
 	Kind                                                               Kind

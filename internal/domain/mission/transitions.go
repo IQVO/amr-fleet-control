@@ -146,7 +146,10 @@ func (m *Mission) RequestCancel(at time.Time) (bool, []any, error) {
 		m.end(Cancelled, at)
 		return true, []any{m.failed(false, at)}, nil
 	case Assigned:
+		// carry (Task 8 review): from here SentAt and Resends count the cancelOrder messages (the
+		// order is no longer resent), so an unanswered cancel is re-sent and bounded like an order.
 		m.s.Status = CancelRequested
+		m.s.SentAt, m.s.Resends = at, 0
 		return false, nil, nil
 	case CancelRequested:
 		return false, nil, nil
