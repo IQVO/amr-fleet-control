@@ -23,7 +23,8 @@ type Message struct {
 	// routes each message by this field.
 	Topic string
 	// EventType is the FULL CloudEvents `type`
-	// (com.warehouse.wes.asrs-control.<entity>.<EventName>).
+	// (com.warehouse.wes.amr-fleet-control.<entity>.<EventName>).
+	// carry (Task 7 review): the example names this service's prefix.
 	EventType string
 	// Subject is the CloudEvents `subject`.
 	Subject string
