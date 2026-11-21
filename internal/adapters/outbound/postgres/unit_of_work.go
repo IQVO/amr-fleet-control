@@ -50,8 +50,9 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error)
 	if joinable(ctx) {
 		return fn(ctx)
 	}
-	// READ COMMITTED is stated, not inherited: the aisle row locks (SELECT ... FOR UPDATE) and
-	// the partial unique index serialise writers; no snapshot isolation is wanted.
+	// READ COMMITTED is stated, not inherited: the fleet row lock (SELECT ... FOR UPDATE,
+	// decision D18) and the partial unique index serialise writers; no snapshot isolation is
+	// wanted. carry (Task 12 review): comment reworded from the asrs-control original.
 	tx, err := begin(ctx, u.pool)
 	if err != nil {
 		return fmt.Errorf("begin unit of work: %w", err)
