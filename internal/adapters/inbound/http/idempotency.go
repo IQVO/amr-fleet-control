@@ -46,15 +46,21 @@ type Idempotency struct {
 // serialized is the marker of usecases.SerialUnitOfWork.
 type serialized interface{ Serialized() }
 
-// NewIdempotency builds the middleware over uow, which MUST be the Service's serialized unit of
-// work (Service.UnitOfWork). carry (Task 14 brief amendment, ruling P3-R10 amended): this unit
-// is the OUTERMOST one of a POST; over the raw unit of work it would take the transaction before
-// the serial lock (an ABBA deadlock against the link worker's Tick) and run its after-commit
-// robot commands outside the lock (a cancel could overtake its order on the wire). A unit of
-// work without the Serialized marker is a wiring bug, so it panics at boot.
-func NewIdempotency(store ports.IdempotencyStore, uow ports.UnitOfWork, clock ports.Clock) *Idempotency {
+// unitOfWorkSource hands out the serialized unit of work: the use-case Service.
+type unitOfWorkSource interface{ UnitOfWork() ports.UnitOfWork }
+
+// NewIdempotency builds the middleware over svc.UnitOfWork(), the Service's serialized unit of
+// work. carry (Task 14 brief amendment, ruling P3-R10 amended): this unit is the OUTERMOST one of
+// a POST; over the raw unit of work it would take the transaction before the serial lock (an ABBA
+// deadlock against the link worker's Tick) and run its after-commit robot commands outside the
+// lock (a cancel could overtake its order on the wire). A unit of work without the Serialized
+// marker is a wiring bug, so it panics at boot. ruling P3-R15: it takes the Service, never a unit
+// of work, so a second usecases.NewSerialUnitOfWork (the marker, but its own mutex the Service's
+// decorator never joins) cannot be wired in.
+func NewIdempotency(store ports.IdempotencyStore, svc unitOfWorkSource, clock ports.Clock) *Idempotency {
+	uow := svc.UnitOfWork()
 	if _, ok := uow.(serialized); !ok {
-		panic(fmt.Sprintf("http.NewIdempotency: the unit of work %T has no Serialized marker; pass Service.UnitOfWork() (ruling P3-R10)", uow))
+		panic(fmt.Sprintf("http.NewIdempotency: the unit of work %T has no Serialized marker; pass the Service (rulings P3-R10, P3-R15)", uow))
 	}
 	return &Idempotency{Store: store, UoW: uow, Clock: clock, Logger: slog.Default()}
 }

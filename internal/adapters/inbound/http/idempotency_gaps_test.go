@@ -61,7 +61,7 @@ func TestAnAnswerIsReplayedFor24HoursOnly(t *testing.T) {
 	s := memory.NewStore()
 	clock := memory.NewClock(t0)
 	h := &countingHandler{}
-	mw := ahttp.NewIdempotency(memory.NewIdempotency(s), usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(s)), clock).Middleware(h)
+	mw := ahttp.NewIdempotency(memory.NewIdempotency(s), unitOfWorkOf{usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(s))}, clock).Middleware(h)
 	_ = postTo(mw, "k")
 	clock.Advance(24*time.Hour - time.Second)
 	if rec := postTo(mw, "k"); rec.Header().Get("Idempotency-Replayed") != "true" || h.calls != 1 {
@@ -97,7 +97,7 @@ func TestAFinalRefusalThatLostTheRaceReplaysTheWinner(t *testing.T) {
 	s := memory.NewStore()
 	store := &racingStore{IdempotencyStore: memory.NewIdempotency(s)}
 	refuse := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { ahttp.Refuse(w, r, "bad-request") })
-	mw := ahttp.NewIdempotency(store, usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(s)), memory.NewClock(t0)).Middleware(refuse)
+	mw := ahttp.NewIdempotency(store, unitOfWorkOf{usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(s))}, memory.NewClock(t0)).Middleware(refuse)
 	if rec := postTo(mw, "k"); rec.Code != http.StatusCreated || rec.Header().Get("Idempotency-Replayed") != "true" {
 		t.Fatalf("lost race = %d replayed=%q %s, want the winner's replayed 201", rec.Code, rec.Header().Get("Idempotency-Replayed"), rec.Body)
 	}

@@ -49,7 +49,7 @@ func newAPI(t *testing.T, robots ...string) *api {
 		n, _ := m.Node(node)
 		_ = svc.HandleState(context.Background(), vda.State{Robot: id, Report: robot.Report{At: t0, LastNodeID: node, X: n.X, Y: n.Y, MapID: m.MapID(), Battery: 90}})
 	}
-	idem := ahttp.NewIdempotency(memory.NewIdempotency(s), svc.UnitOfWork(), clock) // ruling P3-R10: the serialized UoW, never the raw one
+	idem := ahttp.NewIdempotency(memory.NewIdempotency(s), svc, clock) // rulings P3-R10, P3-R15: the Service, so its serialized UoW
 	return &api{t: t, svc: svc, down: down, h: ahttp.NewRouter(&ahttp.Server{Service: svc, Idempotency: idem.Middleware}, nil)}
 }
 

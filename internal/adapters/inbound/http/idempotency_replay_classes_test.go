@@ -470,7 +470,8 @@ func (a *repoAdapter) Middleware(_ *testing.T, next http.Handler) http.Handler {
 	clock := memory.NewClock(time.Date(2026, 11, 20, 8, 0, 0, 0, time.UTC))
 	// carry (Task 14 brief amendment, ruling P3-R10 amended): NewIdempotency refuses a unit of
 	// work that is not serialized; production passes Service.UnitOfWork(), this decorator.
-	return ahttp.NewIdempotency(a.idem, usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(a.db)), clock).Middleware(next)
+	// ruling P3-R15: it takes the Service; no Service exists here, so a stub hands out the decorator.
+	return ahttp.NewIdempotency(a.idem, unitOfWorkOf{usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(a.db))}, clock).Middleware(next)
 }
 
 func (a *repoAdapter) Refuse(w http.ResponseWriter, r *http.Request, e problemEntry) {

@@ -106,7 +106,7 @@ func (u *hooksAfterCommit) AfterCommit(ctx context.Context, fn func()) {
 
 // newGatedAPI is newAPI with one online robot R1 at P1, down as the Downlink and a Postgres-like
 // unit of work; the router is wired exactly as cmd/api wires it: the middleware over
-// svc.UnitOfWork() (ruling P3-R10). inside wraps the handlers INSIDE the middleware's unit.
+// the Service (rulings P3-R10, P3-R15). inside wraps the handlers INSIDE the middleware's unit.
 func newGatedAPI(t *testing.T, down ports.Downlink, inside func(http.Handler) http.Handler) (http.Handler, *usecases.Service) {
 	t.Helper()
 	m, err := config.LoadMap("../../../../config/map.example.yaml")
@@ -130,7 +130,7 @@ func newGatedAPI(t *testing.T, down ports.Downlink, inside func(http.Handler) ht
 		MapID: m.MapID(), Battery: 90}}); err != nil {
 		t.Fatal(err)
 	}
-	idem := ahttp.NewIdempotency(memory.NewIdempotency(s), svc.UnitOfWork(), clock)
+	idem := ahttp.NewIdempotency(memory.NewIdempotency(s), svc, clock)
 	mw := func(next http.Handler) http.Handler { return idem.Middleware(inside(next)) }
 	return ahttp.NewRouter(&ahttp.Server{Service: svc, Idempotency: mw}, nil), svc
 }
