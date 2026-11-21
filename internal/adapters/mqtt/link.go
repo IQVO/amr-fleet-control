@@ -47,6 +47,8 @@ type FleetLink struct {
 	// carry (Task 11 review): the sender publishes only while open() holds, polling every openPoll.
 	open     func() bool
 	openPoll time.Duration
+	// carry (Task 11 review): the store clientOptions hands paho; open() also waits on it.
+	store pahomqtt.Store
 }
 
 // NewFleetLink connects and subscribes on every (re)connection; messages that arrive before
@@ -62,7 +64,7 @@ func NewFleetLink(brokerURL, clientID string, up Uplink, log *slog.Logger) (*Fle
 	if err := l.awaitSubscribed(c, subscribeWait); err != nil {
 		return nil, fmt.Errorf("mqtt subscribe %s as %s: %w", brokerURL, clientID, err)
 	}
-	l.client, l.open = c, c.IsConnectionOpen
+	l.client, l.open = c, openAndDrained(c.IsConnectionOpen, l.store) // carry (Task 11 review)
 	l.pub = func(topic string, b []byte) error { return publish(c, topic, b) }
 	return l, nil
 }
@@ -75,8 +77,10 @@ func (l *FleetLink) onConnect(c pahomqtt.Client) {
 // session tunes the link's client. carry (Task 11 review): a lost connection is logged at WARN
 // with its error (connected logs every (re)connection at INFO with a counter), so a broker
 // outage shows in the logs before robots go stale. CleanSession stays true: every connection
-// subscribes again and the retained connection and factsheet are replayed.
+// subscribes again and the retained connection and factsheet are replayed. carry (Task 11
+// review): the link keeps the client's store, the one paho resumes stored publishes from.
 func (l *FleetLink) session(o *pahomqtt.ClientOptions) {
+	l.store = o.Store
 	o.SetCleanSession(true).SetConnectionLostHandler(func(_ pahomqtt.Client, err error) {
 		l.log.Warn("mqtt connection lost; reconnecting every 2 s", "error", err)
 	})

@@ -3,7 +3,10 @@ package mqtt
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+
+	pahomqtt "github.com/eclipse/paho.mqtt.golang"
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/vda5050"
 	"github.com/IQVO/amr-fleet-control/internal/application/vda"
@@ -98,7 +101,7 @@ func (l *FleetLink) awaitOpen(ctx context.Context) bool {
 	if l.open() {
 		return true
 	}
-	l.log.Warn("mqtt connection closed; robot commands wait in the downlink until it is open", "queued", len(l.out)+1)
+	l.log.Warn("mqtt connection closed or a resumed publish still unacknowledged; robot commands wait in the downlink until it is open and drained", "queued", len(l.out)+1)
 	t := time.NewTicker(l.openPoll)
 	defer t.Stop()
 	for !l.open() {
@@ -109,4 +112,25 @@ func (l *FleetLink) awaitOpen(ctx context.Context) bool {
 		}
 	}
 	return true
+}
+
+// openAndDrained: the connection is open AND paho's store holds no outbound packet. carry (Task
+// 11 review): paho marks the connection open before it resumes the publishes stored at a loss,
+// so a fresh command could overtake a resumed one. paho v1.5.1 deletes the "o.<mid>" key on the
+// PUBACK (persistInbound, net.go:197) before it completes the token (net.go:227), so after a
+// normal publish the store is already empty; after a PUBACK timeout the sender holds the FIFO
+// until the resumed packet is acknowledged. A stored SUBSCRIBE waits only for its SUBACK.
+func openAndDrained(connected func() bool, store pahomqtt.Store) func() bool {
+	return func() bool { return connected() && !pendingOutbound(store) }
+}
+
+// pendingOutbound: the store holds a packet paho sent (or will resume) and the broker has not
+// acknowledged yet (paho keys them "o.<mid>").
+func pendingOutbound(store pahomqtt.Store) bool {
+	for _, k := range store.All() {
+		if strings.HasPrefix(k, "o.") {
+			return true
+		}
+	}
+	return false
 }
