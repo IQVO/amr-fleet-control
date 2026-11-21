@@ -65,3 +65,28 @@ func TestTheClientResumesStoredPublishesInOrder(t *testing.T) {
 		t.Fatalf("store = %T, want *OrderedMemoryStore (the default MemoryStore resumes in map order)", o.Store)
 	}
 }
+
+// carry (Task 11 review): commands still queued when the sender stops are counted in the log
+// (the tick resends orders, cancels and stopCharging after a restart).
+func TestTheSenderLogsTheCommandsItDropsAtExit(t *testing.T) {
+	sink := &logSink{}
+	l := newFleetLink(&recUplink{}, sink.logger())
+	l.open, l.openPoll = func() bool { return false }, time.Millisecond
+	l.pub = func(string, []byte) error { return nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	for i := 0; i < 3; i++ {
+		_ = l.SendOrder(ctx, vda.Order{Robot: r1, OrderID: "leg-1"})
+	}
+	l.Start(ctx)
+	for deadline := time.Now().Add(2 * time.Second); len(sink.records("robot commands wait")) == 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(sink.records("mqtt sender stopped")) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := sink.records("mqtt sender stopped"); len(got) != 1 || got[0]["level"] != "WARN" || got[0]["dropped"] != 3.0 {
+		t.Fatalf("records = %v", got)
+	}
+}

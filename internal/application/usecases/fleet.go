@@ -127,7 +127,7 @@ func (u *unit) afterCommit() {
 	d.UoW.AfterCommit(u.ctx, func() {
 		for _, send := range sends {
 			if err := send(ctx); err != nil {
-				d.Log.Warn("robot command not sent; an unacknowledged order is resent by the tick", "err", err)
+				d.Log.Warn("robot command not sent; an unacknowledged order is resent by the tick (so are a cancelOrder and a stopCharging)", "err", err)
 			}
 		}
 		for _, e := range ended {

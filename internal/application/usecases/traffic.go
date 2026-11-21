@@ -118,15 +118,22 @@ func (u *unit) chargeAll() error {
 	return nil
 }
 
-// stopCharging ends each charge at the resume level, once.
+// stopCharging ends each charge at the resume level, once. carry (Task 11 review): a
+// stopCharging still unanswered after ORDER_RESEND_AFTER (refused by a full downlink, lost with
+// the connection, dropped at shutdown) is sent again, so a charged robot is never stranded.
 func (u *unit) stopCharging() {
+	resume, after := u.s.cfg.ChargeResume, u.s.cfg.ResendAfter
 	for _, k := range u.keys {
 		r := u.robots[k]
-		if !r.Charged(u.s.cfg.ChargeResume) {
+		resend := r.StopChargeOverdue(resume, u.now, after)
+		if !resend && !r.Charged(resume) {
 			continue
 		}
+		if resend {
+			u.s.d.Log.Warn("stopCharging unanswered; sent again", "robot", k)
+		}
 		u.instant(r.ID(), vda.Action{Type: vda.StopCharging, ID: "stop-" + u.s.d.IDs.NewID(), Blocking: vda.BlockingHard})
-		r.MarkStopChargeSent()
+		r.MarkStopChargeSentAt(u.now)
 		u.touchR(r)
 	}
 }

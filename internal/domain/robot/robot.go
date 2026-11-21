@@ -87,6 +87,7 @@ type Snapshot struct {
 	AwaitingAction                    string
 	AwaitingSince                     time.Time // carry (Task 10 review): when the awaited action was last sent
 	StopChargeSent                    bool
+	StopChargeSentAt                  time.Time // carry (Task 11 review): when stopCharging was last sent
 }
 
 // Robot is the aggregate.
@@ -151,7 +152,7 @@ func (r *Robot) ApplyReport(rep Report, node string, at time.Time) []any {
 	r.s.Report, r.s.HasReport, r.s.Node = copyReport(rep), true, node
 	r.s.Connection, r.s.LastSeen, r.s.Stale = ConnectionOnline, at, false
 	if !rep.Charging {
-		r.s.StopChargeSent = false
+		r.s.StopChargeSent, r.s.StopChargeSentAt = false, time.Time{}
 	}
 	if r.s.AwaitingAction != "" {
 		if st, ok := rep.Action(r.s.AwaitingAction); ok && (st.Status == ActionFinished || st.Status == ActionFailed) {
@@ -213,6 +214,12 @@ func (r *Robot) AwaitAction(id string, at time.Time) {
 // MarkStopChargeSent records that stopCharging went out for the current charge.
 func (r *Robot) MarkStopChargeSent() { r.s.StopChargeSent = true }
 
+// MarkStopChargeSentAt is MarkStopChargeSent at a send time. carry (Task 11 review): the time
+// lets the tick send a lost stopCharging again (StopChargeOverdue).
+func (r *Robot) MarkStopChargeSentAt(at time.Time) {
+	r.s.StopChargeSent, r.s.StopChargeSentAt = true, at
+}
+
 // Assignable: idle, on the map, nothing in flight, battery at or above low (responsibility 4).
 func (r *Robot) Assignable(low float64) bool { return r.idleOnMap() && r.s.Report.Battery >= low }
 
@@ -224,9 +231,16 @@ func (r *Robot) idleOnMap() bool {
 }
 
 // Charged: charging without a mission, at or above resume, stopCharging not yet sent.
-func (r *Robot) Charged(resume float64) bool {
-	return r.s.State == Suspended && r.s.Report.Charging && r.s.MissionID == "" &&
-		r.s.Report.Battery >= resume && !r.s.StopChargeSent
+func (r *Robot) Charged(resume float64) bool { return r.charging(resume) && !r.s.StopChargeSent }
+
+// StopChargeOverdue: still charging at or above resume, its stopCharging sent at least after
+// ago and unanswered. carry (Task 11 review): a lost one would strand the robot SUSPENDED.
+func (r *Robot) StopChargeOverdue(resume float64, at time.Time, after time.Duration) bool {
+	return r.charging(resume) && r.s.StopChargeSent && at.Sub(r.s.StopChargeSentAt) >= after
+}
+
+func (r *Robot) charging(resume float64) bool {
+	return r.s.State == Suspended && r.s.Report.Charging && r.s.MissionID == "" && r.s.Report.Battery >= resume
 }
 
 type mark struct {

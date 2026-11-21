@@ -37,7 +37,7 @@ func (l *FleetLink) SendInstantActions(_ context.Context, a vda.InstantActions) 
 }
 
 // enqueue never blocks: a full downlink refuses the command, which the use case logs; an
-// unacknowledged order or cancel is resent by the tick.
+// unacknowledged order, cancel or stopCharging is resent by the tick.
 func (l *FleetLink) enqueue(c command) error {
 	select {
 	case l.out <- c:
@@ -53,13 +53,25 @@ func (l *FleetLink) sendAll(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			l.stopped(0)
 			return
 		case c := <-l.out:
 			if !l.send(ctx, c) {
+				l.stopped(1)
 				return
 			}
 		}
 	}
+}
+
+// stopped logs how many commands the stopped sender leaves unsent (held: one it had taken).
+// carry (Task 11 review): the tick resends orders, cancels and stopCharging after a restart.
+func (l *FleetLink) stopped(held int) {
+	if n := held + len(l.out); n > 0 {
+		l.log.Warn("mqtt sender stopped; robot commands dropped", "dropped", n)
+		return
+	}
+	l.log.Info("mqtt sender stopped", "dropped", 0)
 }
 
 // send publishes one command once the connection is open; a failure or a PUBACK timeout is
@@ -73,7 +85,7 @@ func (l *FleetLink) send(ctx context.Context, c command) bool {
 		err = l.pub(c.topic, b)
 	}
 	if err != nil {
-		l.log.Warn("robot command not sent; an unacknowledged order is resent by the tick", "topic", c.topic, "error", err)
+		l.log.Warn("robot command not sent; an unacknowledged order is resent by the tick (so are a cancelOrder and a stopCharging)", "topic", c.topic, "error", err)
 	}
 	return true
 }
