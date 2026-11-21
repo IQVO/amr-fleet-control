@@ -222,3 +222,27 @@ func TestRecoverEndsACancelRequestedLegOfARetiredVersionCancelled(t *testing.T) 
 		t.Fatalf("instant = %+v", ia)
 	}
 }
+
+// carry (Task 4 review): LastSeen deliberately counts connection messages too: a (retained,
+// replayed) ONLINE connection makes a stale robot fresh again, and it goes stale once more after
+// ROBOT_STALE_AFTER without a state, so a replay delays the stale check by one period at most.
+func TestAReplayedOnlineConnectionDelaysTheStaleCheckByOnePeriodAtMost(t *testing.T) {
+	h := newHarness(t, floor(t), nil)
+	h.online("R1", "P1", 90)
+	h.tick(91 * time.Second)
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.State() != robot.Stopped {
+		t.Fatalf("not stale: %s", r.State())
+	}
+	h.must(h.svc.HandleConnection(ctx, vda.Connection{Robot: rid("R1"), State: robot.ConnectionOnline, At: h.clock.Now()}))
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.State() != robot.Idle || !r.LastSeen().Equal(h.clock.Now()) {
+		t.Fatalf("after the replay: %s %v", r.State(), r.LastSeen())
+	}
+	h.tick(90 * time.Second)
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.State() != robot.Idle {
+		t.Fatalf("stale before ROBOT_STALE_AFTER: %s", r.State())
+	}
+	h.tick(time.Second)
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.State() != robot.Stopped {
+		t.Fatalf("a replayed connection kept a silent robot online: %s", r.State())
+	}
+}

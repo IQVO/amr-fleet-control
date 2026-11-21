@@ -49,6 +49,10 @@ func (s *Service) Recover(ctx context.Context) error {
 }
 
 // stale stops every robot that sent no state for ROBOT_STALE_AFTER (decision D12).
+//
+// carry (Task 4 review): LastSeen deliberately counts connection messages as well as states, so a
+// retained ONLINE connection replayed after a restart makes a silent robot fresh for one more
+// ROBOT_STALE_AFTER at most (Recover's stateRequest asks every robot for a state at once).
 func (u *unit) stale() {
 	for _, k := range u.keys {
 		r := u.robots[k]
