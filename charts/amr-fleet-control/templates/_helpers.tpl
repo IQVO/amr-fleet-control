@@ -107,8 +107,9 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if ne (int .Values.replicaCount) 1 }}
 {{- fail "replicaCount must be 1: amr-fleet-control is the single traffic controller of its fleet (ADR 0002)" }}
 {{- end }}
-{{- if lt (int .Values.terminationGracePeriodSeconds) 15 }}
-{{- fail "terminationGracePeriodSeconds must be at least 15 (10 s HTTP drain plus the relay and MQTT shutdown)" }}
+{{- /* carry (plan 04 Task 23 review lesson d): the stop sequence is bounded at about 20 s; 30 is the floor. */ -}}
+{{- if lt (int .Values.terminationGracePeriodSeconds) 30 }}
+{{- fail "terminationGracePeriodSeconds must be at least 30 (10 s HTTP drain overlapping the loops' stop, a relay pass and the MQTT disconnect: about 20 s, plus a margin)" }}
 {{- end }}
 {{- range .Values.extraEnv }}
 {{- if or (hasSuffix "_MODE" .name) (eq .name "OTEL_EXPORTER_OTLP_ENDPOINT") (eq .name "OTEL_SERVICE_NAME") (eq .name "DATABASE_URL") }}

@@ -37,8 +37,24 @@ grep -q 'replicas: 1$' <<<"$deployment" || fail "the api must run exactly one re
 grep -q 'type: Recreate' <<<"$deployment" || fail "the rollout must be Recreate (never two traffic controllers)"
 grep -q 'readOnlyRootFilesystem: true' <<<"$deployment" || fail "root filesystem must be read-only"
 grep -q 'runAsNonRoot: true' <<<"$deployment" || fail "the pod must run as non-root"
-grep -q 'terminationGracePeriodSeconds: 30' <<<"$deployment" || fail "grace period must default to 30"
+# carry (plan 04 Task 23 review lesson d): the api's stop sequence (10 s HTTP drain overlapping the loops' stop, a relay
+# pass, the MQTT disconnect) is bounded at about 20 s; the grace period defaults to 45 and the chart refuses less than 30.
+grace="$(grep -oE 'terminationGracePeriodSeconds: [0-9]+' <<<"$deployment" | awk '{print $2}')"
+[ "${grace:-0}" -ge 45 ] || fail "api terminationGracePeriodSeconds is ${grace:-unset}, want >= 45 (30 + margin)"
+render --set terminationGracePeriodSeconds=29 >/dev/null 2>&1 && fail "terminationGracePeriodSeconds=29 rendered"
+render --set terminationGracePeriodSeconds=30 >/dev/null 2>&1 || fail "terminationGracePeriodSeconds=30 refused"
 grep -q 'path: /readyz' <<<"$deployment" || fail "readiness probe must hit /readyz"
+# carry (plan 04 Task 23 review lesson d): startup and liveness on /healthz, readiness on /readyz, the map read-only.
+dep_file="$(mktemp)"; trap 'rm -f "$cm_file" "$dep_file"' EXIT
+printf '%s\n' "$deployment" > "$dep_file"
+python3 - "$dep_file" <<'PY' || fail "api probes / mounts"
+import sys, yaml
+c = yaml.safe_load(open(sys.argv[1]))["spec"]["template"]["spec"]["containers"][0]
+got = {p: c.get(p, {}).get("httpGet", {}).get("path") for p in ("startupProbe", "livenessProbe", "readinessProbe")}
+assert got == {"startupProbe": "/healthz", "livenessProbe": "/healthz", "readinessProbe": "/readyz"}, got
+mounts = [(m["name"], m["mountPath"], m.get("readOnly")) for m in c["volumeMounts"]]
+assert mounts == [("map", "/etc/amr-fleet-control", True)], mounts
+PY
 grep -q 'mountPath: /etc/amr-fleet-control' <<<"$deployment" || fail "map.yaml is not mounted at the map file's directory"
 grep -qE '_MODE|ENVIRONMENT' <<<"$deployment$configmap" && fail "no *_MODE or ENVIRONMENT variable may exist"
 grep -q 'OTEL_EXPORTER_OTLP_ENDPOINT: "otel-collector' <<<"$configmap" || fail "otel must default on with the collector endpoint"
@@ -64,9 +80,40 @@ helm template amr-fleet-control "$chart_dir" --set kafka.brokers=k:9092 >/dev/nu
 helm template amr-fleet-control "$chart_dir" --set database.url=postgres://x >/dev/null 2>&1 && fail "renders without Kafka"
 render --set mqtt.url= >/dev/null 2>&1 && fail "renders without MQTT"
 render --set replicaCount=2 >/dev/null 2>&1 && fail "renders two api replicas"
+# carry (plan 04 Task 23 review lesson d): never zero api replicas either.
+render --set replicaCount=0 >/dev/null 2>&1 && fail "renders zero api replicas"
 render --set terminationGracePeriodSeconds=5 >/dev/null 2>&1 && fail "renders a grace period below the shutdown bound"
 render --set 'extraEnv[0].name=SCHEDULER_MODE' --set 'extraEnv[0].value=x' >/dev/null 2>&1 && fail "renders a *_MODE extraEnv"
 other="$(render --show-only templates/configmap.yaml --set mqtt.url=tcp://x:1 --set config.chargeLowPercent=30)"
 grep -q 'MQTT_URL: "tcp://x:1"' <<<"$other" || fail "mqtt.url does not reach MQTT_URL"
 grep -q 'CHARGE_LOW_PERCENT: "30"' <<<"$other" || fail "config.chargeLowPercent does not reach its variable"
+# carry (plan 04 Task 23 review lesson c): mcp and a2a read both database URLs from the chart's Secret (or the existing
+# one), the migrations DSN included, and get no Kafka, MQTT or relay variable.
+for secret in "" existing-db; do
+  extra=(); [ -n "$secret" ] && extra=(--set database.existingSecret="$secret")
+  for c in mcp a2a; do
+    d_file="$(mktemp)"
+    helm template amr-fleet-control "$chart_dir" "${all[@]}" --set database.url=postgres://x --set database.existingSecret= \
+      ${extra[@]+"${extra[@]}"} --show-only "templates/$c-deployment.yaml" > "$d_file"
+    python3 - "$d_file" "$c" "${secret:-amr-fleet-control-db}" <<'PY' || { rm -f "$d_file"; fail "$c database env (secret ${secret:-chart})"; }
+import sys, yaml
+path, comp, secret = sys.argv[1], sys.argv[2], sys.argv[3]
+d = yaml.safe_load(open(path))
+spec = d["spec"]["template"]["spec"]
+c = spec["containers"][0]
+env = {e["name"]: e for e in c["env"]}
+for name in ("DATABASE_URL", "MIGRATIONS_DATABASE_URL"):
+    ref = env[name].get("valueFrom", {}).get("secretKeyRef", {})
+    assert ref.get("name") == secret and ref.get("key") == name, f"{comp} {name} is {env[name]}, want secretKeyRef {secret}/{name}"
+    assert "value" not in env[name], f"{comp} {name} has a literal value"
+bad = sorted(n for n in env if n.startswith(("KAFKA_", "MQTT_", "OUTBOX_")))
+assert not bad, f"{comp} gets {bad}"
+assert "envFrom" not in c, f"{comp} mounts an env ConfigMap"
+assert [m["mountPath"] for m in c["volumeMounts"] if m.get("readOnly")] == ["/etc/amr-fleet-control"], f"{comp} mounts {c['volumeMounts']}"
+for p in ("startupProbe", "livenessProbe", "readinessProbe"):
+    assert c[p]["httpGet"]["path"] == "/healthz", f"{comp} {p} {c[p]}"
+PY
+    rm -f "$d_file"
+  done
+done
 echo "render_test: PASS"

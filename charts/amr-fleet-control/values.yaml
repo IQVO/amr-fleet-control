@@ -35,8 +35,9 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 
-# Longer than the HTTP drain (10 s) plus a relay pass and the MQTT disconnect.
-terminationGracePeriodSeconds: 30
+# carry (plan 04 Task 23 review lesson d): the stop sequence (10 s HTTP drain overlapping the loops' stop, a relay pass,
+# the MQTT disconnect) is bounded at about 20 s; 45 adds a margin. The chart refuses less than 30.
+terminationGracePeriodSeconds: 45
 
 service:
   type: ClusterIP
@@ -93,6 +94,13 @@ map: ""
 
 extraEnv: []
 
+# carry (plan 04 Task 23 review lesson d): the boot runs the migrations, loads the map and dials Kafka and MQTT
+# (NewFleetLink waits up to 35 s for the first subscription round) before it listens: 90 s of startup budget.
+startupProbe:
+  httpGet: {path: /healthz, port: http}
+  periodSeconds: 3
+  failureThreshold: 30
+
 livenessProbe:
   httpGet: {path: /healthz, port: http}
   initialDelaySeconds: 5
@@ -134,9 +142,10 @@ mcp:
     path: "/api/mcp/amr-fleet-control"
     parentRefs: []
   extraEnv: []
+  # Read-only agents idle at a few millicores and under 16Mi (asrs-control: 20m / 32Mi; material-flow-control: 25m / 32Mi).
   resources:
     limits: {cpu: 250m, memory: 128Mi}
-    requests: {cpu: 50m, memory: 64Mi}
+    requests: {cpu: 25m, memory: 32Mi}
 
 # Read-only A2A agent (cmd/a2a, ADR 0006). agentUrl empty = this release's in-cluster Service.
 a2a:
@@ -153,9 +162,10 @@ a2a:
     path: "/api/a2a/amr-fleet-control"
     parentRefs: []
   extraEnv: []
+  # Read-only agents idle at a few millicores and under 16Mi (asrs-control: 20m / 32Mi; material-flow-control: 25m / 32Mi).
   resources:
     limits: {cpu: 250m, memory: 128Mi}
-    requests: {cpu: 50m, memory: 64Mi}
+    requests: {cpu: 25m, memory: 32Mi}
 
 # Kong plugins owned by this chart (fleet decision 2026-10-13), attached to every enabled HTTPRoute.
 # All default off; warehouse-infra switches them on. NO auth plugin, ever (fleet rule).
