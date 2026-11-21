@@ -21,8 +21,23 @@ var errorCatalogue = []struct {
 	{robot.ErrInvalidRobot, "validation-failed"},
 }
 
+// toolErr is a tool error the model reads as "<slug>: <detail>"; the detail may echo its input.
+type toolErr struct{ slug, detail string }
+
+func (e toolErr) Error() string { return fmt.Sprintf("%s: %s", e.slug, e.detail) }
+
 func toolError(slug, detail string) error {
-	return fmt.Errorf("%s: %s", slug, detail)
+	return toolErr{slug: slug, detail: detail}
+}
+
+// slugOf names a tool error by its catalogue slug only. carry (Task 18 review M3): spans record the
+// slug, never the detail, which for a not-found echoes the raw model input.
+func slugOf(err error) string {
+	var te toolErr
+	if errors.As(err, &te) {
+		return te.slug
+	}
+	return "internal-error"
 }
 
 func mapError(ctx context.Context, err error) error {

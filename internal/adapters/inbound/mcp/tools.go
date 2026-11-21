@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -171,7 +172,7 @@ const tracerName = "github.com/IQVO/amr-fleet-control/internal/adapters/inbound/
 
 // addTool registers handle under tool. carry (plan 04 Task 20/21 review lessons): every call runs in
 // one "mcp.tool <name>" span carrying gen_ai.operation.name=execute_tool, the tool name and its
-// declared authority (warehouse.authority); a failed call records the MAPPED tool error (mapError: no
+// declared authority (warehouse.authority); a failed call records the MAPPED tool error's slug (mapError: no
 // DSN or SQL reaches a trace) and marks the span Error.
 func addTool[In, Out any](server *mcp.Server, tool *mcp.Tool, handle func(context.Context, In) (Out, error)) {
 	level, _ := tool.Meta[authorityMetaKey].(string)
@@ -183,8 +184,9 @@ func addTool[In, Out any](server *mcp.Server, tool *mcp.Tool, handle func(contex
 		defer span.End()
 		out, err := handle(ctx, in)
 		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
+			slug := slugOf(err) // carry (Task 18 review M3): the slug only, no raw id in the trace
+			span.RecordError(errors.New(slug))
+			span.SetStatus(codes.Error, slug)
 			var zero Out
 			return nil, zero, err
 		}

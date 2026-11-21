@@ -3,6 +3,7 @@ package mcp_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -102,7 +103,7 @@ func TestEveryToolCallIsOneSpanWithTheAuthority(t *testing.T) {
 		t.Fatalf("get_robot spans = %d, want 2", len(robots))
 	}
 	failed := robots[1]
-	if failed.Status().Code != codes.Error || failed.Status().Description != "robot-not-found: robot not found" ||
+	if failed.Status().Code != codes.Error || failed.Status().Description != "robot-not-found" ||
 		len(failed.Events()) != 1 || failed.Events()[0].Name != "exception" {
 		t.Errorf("the failed call = %+v %v", failed.Status(), failed.Events())
 	}
@@ -116,13 +117,42 @@ func TestAnInfrastructureErrorLeavesNoDSNInTheSpan(t *testing.T) {
 		t.Fatalf("get_fleet = %v", e)
 	}
 	spans := spansNamed(sr, "mcp.tool get_fleet")
-	if len(spans) != 1 || spans[0].Status().Description != "internal-error: an unexpected internal error occurred" {
+	if len(spans) != 1 || spans[0].Status().Description != "internal-error" {
 		t.Fatalf("spans = %v", spans)
 	}
 	for _, ev := range spans[0].Events() {
 		for _, kv := range ev.Attributes {
 			if strings.Contains(kv.Value.String(), "postgres://") || strings.Contains(kv.Value.String(), "SELECT") {
 				t.Errorf("the span event %s leaks %q", ev.Name, kv.Value.String())
+			}
+		}
+	}
+}
+
+// echoingReads answers a not-found the way the real Reader does: the error text echoes the raw model input.
+type echoingReads struct{ fakeReads }
+
+func (echoingReads) Leg(_ context.Context, _, legID string) (usecases.LegView, error) {
+	return usecases.LegView{}, fmt.Errorf("%w: %s", usecases.ErrLegNotFound, legID)
+}
+
+// carry (Task 18 review M3): the span carries the slug only. The raw model input a not-found echoes
+// ("leg-not-found: leg not found: <legId>", unbounded) reaches the model's tool result, never the trace.
+func TestAFailedCallSpanCarriesTheSlugNotTheRawId(t *testing.T) {
+	sr := recordSpans(t)
+	raw := "leg-" + strings.Repeat("x", 64)
+	e, isErr := call(t, sessionWith(t, echoingReads{}), "get_leg", map[string]any{"fleetId": "AMR1", "legId": raw})
+	if msg, _ := e["error"].(string); !isErr || !strings.HasPrefix(msg, "leg-not-found: ") || !strings.Contains(msg, raw) {
+		t.Fatalf("get_leg = %v, want the leg-not-found tool error naming the id", e)
+	}
+	spans := spansNamed(sr, "mcp.tool get_leg")
+	if len(spans) != 1 || spans[0].Status().Code != codes.Error || spans[0].Status().Description != "leg-not-found" {
+		t.Fatalf("spans = %+v", spans)
+	}
+	for _, ev := range spans[0].Events() {
+		for _, kv := range ev.Attributes {
+			if strings.Contains(kv.Value.String(), raw) {
+				t.Errorf("the span event %s carries the raw id: %s=%q", ev.Name, kv.Key, kv.Value.String())
 			}
 		}
 	}
