@@ -13,6 +13,7 @@ import (
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/vda5050"
 	"github.com/IQVO/amr-fleet-control/internal/application/vda"
+	"github.com/IQVO/amr-fleet-control/internal/domain/robot"
 )
 
 // TickEvery is the fleet tick period; ticks run on the link's worker, in line with the robot
@@ -129,34 +130,62 @@ func (l *FleetLink) tick(ctx context.Context) {
 }
 
 func (l *FleetLink) dispatch(ctx context.Context, topic string, payload []byte) {
-	_, name, ok := vda5050.ParseTopic(topic)
+	id, name, ok := vda5050.ParseTopic(topic)
 	if !ok {
 		l.log.Warn("message on an unexpected topic ignored", "topic", topic)
 		return
 	}
-	var err error
-	switch name {
-	case "state":
-		var s vda.State
-		if s, err = vda5050.DecodeState(payload); err == nil {
-			err = l.up.HandleState(ctx, s)
-		}
-	case "connection":
-		var c vda.Connection
-		if c, err = vda5050.DecodeConnection(payload); err == nil {
-			err = l.up.HandleConnection(ctx, c)
-		}
-	case "factsheet":
-		var f vda.Factsheet
-		if f, err = vda5050.DecodeFactsheet(payload); err == nil {
-			err = l.up.HandleFactsheet(ctx, f)
-		}
-	default:
+	// carry (Task 11 review): a zero-length payload is how a retained message is cleared.
+	if len(payload) == 0 {
+		l.log.Debug("empty payload ignored (a cleared retained message)", "topic", topic)
 		return
 	}
-	if err != nil {
+	if err := l.apply(ctx, id, name, payload); err != nil {
 		l.log.Error("robot message not applied", "topic", topic, "error", err)
 	}
+}
+
+// apply decodes one robot message and hands it to the application; other topics are ignored.
+func (l *FleetLink) apply(ctx context.Context, id robot.ID, name string, payload []byte) error {
+	switch name {
+	case "state":
+		s, err := vda5050.DecodeState(payload)
+		if err == nil {
+			err = sameRobot(id, s.Robot)
+		}
+		if err != nil {
+			return err
+		}
+		return l.up.HandleState(ctx, s)
+	case "connection":
+		c, err := vda5050.DecodeConnection(payload)
+		if err == nil {
+			err = sameRobot(id, c.Robot)
+		}
+		if err != nil {
+			return err
+		}
+		return l.up.HandleConnection(ctx, c)
+	case "factsheet":
+		f, err := vda5050.DecodeFactsheet(payload)
+		if err == nil {
+			err = sameRobot(id, f.Robot)
+		}
+		if err != nil {
+			return err
+		}
+		return l.up.HandleFactsheet(ctx, f)
+	}
+	return nil
+}
+
+// sameRobot refuses a message whose header names another robot than its topic. carry (Task 11
+// review): applying it would move the header's robot on another robot's report.
+func sameRobot(topic, header robot.ID) error {
+	if topic != header {
+		return fmt.Errorf("%w: topic robot %s, header robot %s", vda5050.ErrInvalidMessage, topic.Key(), header.Key())
+	}
+	return nil
 }
 
 // Connected reports the broker connection (readiness).
