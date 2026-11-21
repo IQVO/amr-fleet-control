@@ -10,6 +10,7 @@ import (
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/postgres"
 	"github.com/IQVO/amr-fleet-control/internal/application/fleetrow"
+	"github.com/IQVO/amr-fleet-control/internal/application/outbox"
 	"github.com/IQVO/amr-fleet-control/internal/testing/pgtest"
 )
 
@@ -57,6 +58,43 @@ func TestAUnitWaitingOnAHeldFleetRowGivesUpWithinTheTimeouts(t *testing.T) {
 		var v string
 		if err := pool.QueryRow(ctx, "SHOW "+setting).Scan(&v); err != nil || v != "0" {
 			t.Fatalf("%s outside a unit = %q (%v): the unit's SET must be LOCAL, never leak to the session", setting, v, err)
+		}
+	}
+}
+
+// carry (Task 12 review): the relay's pass (Drain) and a stand-alone Insert (inTx) begin their
+// own transactions, so they must state the same SET LOCAL timeouts. An ACCESS EXCLUSIVE lock
+// on outbox_events makes both wait; on a pool with no session settings only their own
+// lock_timeout ends the wait.
+func TestDrainAndAnInsertOutsideAUnitCarryTheTimeouts(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.BarePool(t)
+	repo := postgres.NewOutboxRepo(pool)
+	holder, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Rollback(ctx) }()
+	if _, err := holder.Exec(ctx, `LOCK TABLE outbox_events IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func(context.Context) error{
+		"Drain": func(c context.Context) error {
+			_, err := repo.Drain(c, 10, 0, func(context.Context, outbox.Message) error { return nil })
+			return err
+		},
+		"Insert outside a unit (inTx)": func(c context.Context) error {
+			return repo.Insert(c, outbox.Message{EventID: "e", Topic: "t", EventType: "x", Subject: "s", DataSchema: "u", Value: []byte("{}")})
+		},
+	} {
+		wctx, cancel := context.WithTimeout(ctx, 12*time.Second) // the backstop, well past the timeouts
+		start := time.Now()
+		err := run(wctx)
+		elapsed := time.Since(start)
+		cancel()
+		var pg interface{ SQLState() string } // *pgconn.PgError
+		if !errors.As(err, &pg) || (pg.SQLState() != "55P03" && pg.SQLState() != "57014") || elapsed > 6500*time.Millisecond {
+			t.Errorf("%s = %v after %v; want SQLSTATE 55P03 (lock_timeout) or 57014 (statement_timeout) within ~6 s", name, err, elapsed)
 		}
 	}
 }
