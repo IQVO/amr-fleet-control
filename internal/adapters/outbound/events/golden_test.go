@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IQVO/amr-fleet-control/internal/adapters/kafka/cloudevents"
 	"github.com/IQVO/amr-fleet-control/internal/application/outbox"
 	"github.com/IQVO/amr-fleet-control/internal/domain/capacity"
 	"github.com/IQVO/amr-fleet-control/internal/domain/fleetmap"
@@ -54,6 +55,10 @@ func TestEveryFactIsOneCloudEventOnBothTopics(t *testing.T) {
 		{robot.RobotStateChanged{Robot: r1, State: robot.Stopped, Previous: robot.Idle, Connection: robot.ConnectionOnline, ErrorTypes: []string{}, At: at},
 			"robot.RobotStateChanged", "EMU/R1",
 			`{"fleet_id":"AMR1","robot":{"manufacturer":"EMU","serial_number":"R1"},"state":"STOPPED","previous_state":"IDLE","connection":"ONLINE","battery_percent":0,"charging":false,"error_types":[],"changed_at":"2026-11-20T08:00:01Z"}`},
+		// carry (Task 13 review): a nil ErrorTypes still encodes "error_types":[] (nonNil), never null.
+		{robot.RobotStateChanged{Robot: r1, State: robot.Idle, Previous: robot.Stopped, Connection: robot.ConnectionOnline, Battery: 80, At: at},
+			"robot.RobotStateChanged", "EMU/R1",
+			`{"fleet_id":"AMR1","robot":{"manufacturer":"EMU","serial_number":"R1"},"state":"IDLE","previous_state":"STOPPED","connection":"ONLINE","battery_percent":80,"charging":false,"error_types":[],"changed_at":"2026-11-20T08:00:01Z"}`},
 		{capacity.FleetCapacityChanged{Snapshot: capacity.Snapshot{RobotsTotal: 3, RobotsOnline: 2, RobotsAvailable: 1, RobotsCharging: 1, LegsQueued: 4, LegsActive: 1, At: at}},
 			"fleet.FleetCapacityChanged", "AMR1",
 			`{"fleet_id":"AMR1","robots_total":3,"robots_online":2,"robots_available":1,"robots_charging":1,"robots_held":0,"legs_queued":4,"legs_active":1,"changed_at":"2026-11-20T08:00:01Z"}`},
@@ -94,6 +99,7 @@ func checkTwins(t *testing.T, c struct {
 			env["dataschema"] != "urn:warehouse:amr-fleet-control:"+stream+":"+name(c.typ)+":v1" {
 			t.Fatalf("%s %s: envelope %v", c.typ, stream, env)
 		}
+		checkRow(t, c.typ, c.subject, stream, env, m)
 		var want any
 		_ = json.Unmarshal([]byte(c.data), &want)
 		if !reflect.DeepEqual(env["data"], want) {
@@ -103,6 +109,31 @@ func checkTwins(t *testing.T, c struct {
 	}
 	if out.msgs[0].EventID != out.msgs[1].EventID {
 		t.Fatalf("%s: the twins must share one id", c.typ)
+	}
+}
+
+// checkRow pins the outbox row columns and Kafka header the relay publishes from, and the envelope
+// time. carry (Task 13 review): content-type header == cloudevents.MediaType, envelope time == the
+// event's time (every case records at; RFC3339Nano), m.Subject and m.DataSchema per stream.
+func checkRow(t *testing.T, typ, subject, stream string, env map[string]any, m outbox.Message) {
+	t.Helper()
+	ct := 0
+	for _, h := range m.Headers {
+		if h.Key == "content-type" && h.Value == cloudevents.MediaType {
+			ct++
+		}
+	}
+	if ct != 1 || len(m.Headers) != 1 {
+		t.Fatalf("%s %s: headers %+v, want exactly content-type %q", typ, stream, m.Headers, cloudevents.MediaType)
+	}
+	if want := at.UTC().Format(time.RFC3339Nano); env["time"] != want {
+		t.Fatalf("%s %s: envelope time %v, want %s", typ, stream, env["time"], want)
+	}
+	if m.Subject != subject {
+		t.Fatalf("%s %s: row subject %q, want %q", typ, stream, m.Subject, subject)
+	}
+	if want := "urn:warehouse:amr-fleet-control:" + stream + ":" + name(typ) + ":v1"; m.DataSchema != want {
+		t.Fatalf("%s %s: row dataschema %q, want %q", typ, stream, m.DataSchema, want)
 	}
 }
 
