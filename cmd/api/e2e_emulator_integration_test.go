@@ -48,6 +48,9 @@ asrs:
 
 const eventsTopic = "warehouse.amr-fleet-control.events"
 
+// carry (Task 17 review): every call is bounded, so a hung request fails on its own line.
+var client = &http.Client{Timeout: 10 * time.Second}
+
 type e2e struct {
 	t            *testing.T
 	api, emu, mq string
@@ -131,7 +134,7 @@ func (e *e2e) call(method, url, body string) (int, map[string]any) {
 		e.n++
 		req.Header.Set("Idempotency-Key", "e2e-"+strconv.Itoa(e.n))
 	}
-	res, err := http.DefaultClient.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -142,7 +145,8 @@ func (e *e2e) call(method, url, body string) (int, map[string]any) {
 	return res.StatusCode, m
 }
 
-func (e *e2e) eventually(what string, timeout time.Duration, ok func() bool) {
+// carry (Task 17 review): on timeout, eventually prints what the wait last observed.
+func (e *e2e) eventually(what string, timeout time.Duration, ok func() bool, seen ...func() any) {
 	e.t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -151,7 +155,11 @@ func (e *e2e) eventually(what string, timeout time.Duration, ok func() bool) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	e.t.Fatalf("%s did not happen within %s", what, timeout)
+	var last any
+	if len(seen) > 0 {
+		last = seen[0]()
+	}
+	e.t.Fatalf("%s did not happen within %s; last seen: %v", what, timeout, last)
 }
 
 // leg requests a leg and returns its id and the 202 answer (status ASSIGNED with the robot when one was free).
@@ -162,7 +170,12 @@ func (e *e2e) leg(container, from, to string) (string, map[string]any) {
 	if code != http.StatusAccepted {
 		e.t.Fatalf("leg %s = %d %v", container, code, m)
 	}
-	return m["leg_id"].(string), m
+	// carry (Task 17 review): comma-ok, so a malformed answer fails instead of panicking.
+	id, ok := m["leg_id"].(string)
+	if !ok {
+		e.t.Fatalf("leg %s: the 202 answer has no leg_id: %v", container, m)
+	}
+	return id, m
 }
 
 func (e *e2e) waitLeg(id, status string, timeout time.Duration) map[string]any {
@@ -171,7 +184,7 @@ func (e *e2e) waitLeg(id, status string, timeout time.Duration) map[string]any {
 	e.eventually("leg "+id+" "+status, timeout, func() bool {
 		_, last = e.call(http.MethodGet, e.api+"/fleets/AMR1/legs/"+id, "")
 		return last["status"] == status
-	})
+	}, func() any { return last })
 	return last
 }
 
@@ -209,7 +222,7 @@ func (e *e2e) retrieveToPort(container, port string, aisle int) {
 		_, last = e.call(http.MethodGet, e.emu+"/asrs/ASRS1", "")
 		ports, _ := last["ports"].(map[string]any)
 		return ports[port] == container
-	})
+	}, func() any { return last })
 }
 
 // published returns the decoded CloudEvents of the integration topic once until holds.
@@ -241,17 +254,15 @@ func ofLeg(evs []map[string]any, legID, name string) []map[string]any {
 
 func TestLegsChargingAndFaultsAgainstTheEmulatorRobots(t *testing.T) {
 	e := stack(t)
-	e.eventually("three robots online", 30*time.Second, func() bool {
-		_, f := e.call(http.MethodGet, e.api+"/fleets/AMR1", "")
-		c, _ := f["capacity"].(map[string]any)
-		return c != nil && c["robots_online"] == 3.0 && c["robots_available"] == 3.0
+	e.waitCapacity("three robots online", func(c map[string]any) bool {
+		return c["robots_online"] == 3.0 && c["robots_available"] == 3.0
 	})
 
 	// 1. A station-to-port leg: the nearest robot (R1 at P1) picks at ST1 and drops at the AS/RS input port.
 	legA, _ := e.leg("C-A", "ST1", "ASRS1-IN1")
 	done := e.waitLeg(legA, "DONE", 60*time.Second)
-	if r := done["robot"].(map[string]any); r["serial_number"] != "R1" {
-		t.Fatalf("leg A robot = %v (R1 at P1 is nearest to ST1)", r)
+	if r, ok := done["robot"].(map[string]any); !ok || r["serial_number"] != "R1" {
+		t.Fatalf("leg A robot = %v (R1 at P1 is nearest to ST1); leg %v", done["robot"], done)
 	}
 	_, asrs := e.call(http.MethodGet, e.emu+"/asrs/ASRS1", "")
 	if b, _ := json.Marshal(asrs); !strings.Contains(string(b), "C-A") {
@@ -268,39 +279,82 @@ func TestLegsChargingAndFaultsAgainstTheEmulatorRobots(t *testing.T) {
 	e.retrieveToPort("C-C", "OUT2", 2)
 	legC, _ := e.leg("C-C", "ASRS1-OUT2", "ST2")
 	e.waitLeg(legC, "DONE", 90*time.Second)
+	// carry (Task 17 review): the emulator's own view - the pick took C-C off OUT2.
+	_, asrs = e.call(http.MethodGet, e.emu+"/asrs/ASRS1", "")
+	if ports, ok := asrs["ports"].(map[string]any); !ok || ports["OUT2"] != "" {
+		t.Fatalf("the emulator's ports after leg C = %v, want OUT2 empty", asrs["ports"])
+	}
 
 	// 3. A blocked robot fails its leg ROBOT_BLOCKED after ROBOT_BLOCKED_TIMEOUT (5 s here) and is cancelled.
-	// The 202 already names the robot (one is idle), so the fault lands while the leg runs.
-	legD, accepted := e.leg("C-D", "ST2", "ST1")
-	robotD, ok := accepted["robot"].(map[string]any)
-	if accepted["status"] != "ASSIGNED" || !ok {
-		t.Fatalf("leg D was not assigned at once: %v", accepted)
-	}
-	serial := robotD["serial_number"].(string)
-	e.fault("ROBOT_BLOCKED", serial, true, 0)
-	blocked := e.waitLeg(legD, "FAILED", 60*time.Second)
-	if blocked["reason"] != "ROBOT_BLOCKED" || blocked["robot_error"] != "ROBOT_BLOCKED" {
-		t.Fatalf("leg D = %v", blocked)
-	}
-	e.fault("ROBOT_BLOCKED", serial, false, 0)
+	legD := e.blockedLeg()
 
 	// 4. A robot below the charge threshold drives to the charger and is not available while charging.
 	e.fault("ROBOT_BATTERY", "R3", true, 15)
-	e.eventually("R3 charging", 90*time.Second, func() bool {
-		_, r := e.call(http.MethodGet, e.api+"/fleets/AMR1/robots/EMU/R3", "")
+	e.waitRobot("R3", 90*time.Second, func(r map[string]any) bool {
 		return r["state"] == "SUSPENDED" && r["node_id"] == "CH1" && r["available"] == false
 	})
 
 	// 5. A disconnected robot leaves the online count.
 	e.fault("ROBOT_DISCONNECT", "R2", true, 0)
-	e.eventually("R2 stopped", 30*time.Second, func() bool {
-		_, r := e.call(http.MethodGet, e.api+"/fleets/AMR1/robots/EMU/R2", "")
-		return r["state"] == "STOPPED"
-	})
+	e.waitRobot("R2", 30*time.Second, func(r map[string]any) bool { return r["state"] == "STOPPED" })
+	// carry (Task 17 review): ... and the fleet capacity counts it out.
+	e.waitCapacity("robots_online 2 after the disconnect", func(c map[string]any) bool { return c["robots_online"] == 2.0 })
 
 	evs := published(t, func(evs []map[string]any) bool {
 		return len(ofLeg(evs, legC, "LegCompleted")) == 1 && len(ofLeg(evs, legD, "LegFailed")) == 1
 	})
+	assertOutcomes(t, evs, legA, legB, legC, legD)
+	assertPayloads(t, evs, legA, legB, legD)
+}
+
+// carry (Task 17 review): the helpers below are split out of the test body (cyclop) so the
+// added waits and payload checks keep every step's assertion; none was dropped.
+
+// blockedLeg starts leg D, blocks its robot mid-leg and waits for the ROBOT_BLOCKED failure.
+// The 202 already names the robot (one is idle), so the fault lands while the leg runs.
+// ST1 -> ST2 is the map's longest station leg (the approach to ST1 plus ST1-E-F-G-H-ST2), so the
+// fault lands mid-leg rather than racing the sub-second ST2 -> ST1 leg the robot of leg C would get.
+func (e *e2e) blockedLeg() string {
+	e.t.Helper()
+	legD, accepted := e.leg("C-D", "ST1", "ST2")
+	robotD, ok := accepted["robot"].(map[string]any)
+	if accepted["status"] != "ASSIGNED" || !ok {
+		e.t.Fatalf("leg D was not assigned at once: %v", accepted)
+	}
+	serial, ok := robotD["serial_number"].(string)
+	if !ok {
+		e.t.Fatalf("leg D robot has no serial_number: %v", robotD)
+	}
+	e.fault("ROBOT_BLOCKED", serial, true, 0)
+	blocked := e.waitLeg(legD, "FAILED", 60*time.Second)
+	if blocked["reason"] != "ROBOT_BLOCKED" || blocked["robot_error"] != "ROBOT_BLOCKED" {
+		e.t.Fatalf("leg D = %v", blocked)
+	}
+	e.fault("ROBOT_BLOCKED", serial, false, 0)
+	return legD
+}
+
+func (e *e2e) waitRobot(serial string, timeout time.Duration, ok func(map[string]any) bool) {
+	e.t.Helper()
+	var last map[string]any
+	e.eventually(serial+" state", timeout, func() bool {
+		_, last = e.call(http.MethodGet, e.api+"/fleets/AMR1/robots/EMU/"+serial, "")
+		return ok(last)
+	}, func() any { return last })
+}
+
+func (e *e2e) waitCapacity(what string, ok func(map[string]any) bool) {
+	e.t.Helper()
+	var last map[string]any
+	e.eventually(what, 30*time.Second, func() bool {
+		_, last = e.call(http.MethodGet, e.api+"/fleets/AMR1", "")
+		c, _ := last["capacity"].(map[string]any)
+		return c != nil && ok(c)
+	}, func() any { return last })
+}
+
+func assertOutcomes(t *testing.T, evs []map[string]any, legA, legB, legC, legD string) {
+	t.Helper()
 	for _, leg := range []string{legA, legB, legC, legD} {
 		if n := len(ofLeg(evs, leg, "LegCompleted")) + len(ofLeg(evs, leg, "LegFailed")); n != 1 {
 			t.Fatalf("leg %s has %d outcomes, want exactly one (responsibility 6)", leg, n)
@@ -309,11 +363,34 @@ func TestLegsChargingAndFaultsAgainstTheEmulatorRobots(t *testing.T) {
 			t.Fatalf("leg %s has %d LegAssigned", leg, n)
 		}
 	}
+}
+
+func assertPayloads(t *testing.T, evs []map[string]any, legA, legB, legD string) {
+	t.Helper()
 	for _, name := range []string{"ContainerPickedUp", "LegCompleted"} {
-		ev := ofLeg(evs, legA, name)[0]
-		data := ev["data"].(map[string]any)
-		if data["robot_timestamp"] == nil || data["fleet_id"] != "AMR1" || ev["source"] != "/warehouse/amr-fleet-control" {
+		// carry (Task 17 review): count before indexing, comma-ok on the data map.
+		got := ofLeg(evs, legA, name)
+		if len(got) != 1 {
+			t.Fatalf("leg A has %d %s; events %v", len(got), name, evs)
+		}
+		ev := got[0]
+		data, ok := ev["data"].(map[string]any)
+		if !ok || data["robot_timestamp"] == nil || data["fleet_id"] != "AMR1" || ev["source"] != "/warehouse/amr-fleet-control" {
 			t.Fatalf("%s of leg A = %v", name, ev)
 		}
+	}
+	// carry (Task 17 review): the LegFailed payload plan 04 consumes carries the reason and the robot's error.
+	for leg, want := range map[string][2]string{legB: {"PICK_FAILED", "LOAD_NOT_AVAILABLE"}, legD: {"ROBOT_BLOCKED", "ROBOT_BLOCKED"}} {
+		got := ofLeg(evs, leg, "LegFailed")
+		if len(got) != 1 {
+			t.Fatalf("leg %s has %d LegFailed; events %v", leg, len(got), evs)
+		}
+		data, ok := got[0]["data"].(map[string]any)
+		if !ok || data["reason"] != want[0] || data["robot_error"] != want[1] {
+			t.Fatalf("LegFailed of %s = %v, want reason %s robot_error %s", leg, got[0], want[0], want[1])
+		}
+	}
+	if n := len(ofLeg(evs, legB, "ContainerPickedUp")); n != 0 {
+		t.Fatalf("leg B picked nothing, got %d ContainerPickedUp; events %v", n, evs)
 	}
 }
