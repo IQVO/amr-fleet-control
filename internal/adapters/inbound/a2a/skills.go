@@ -3,6 +3,7 @@ package a2a
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
 	"github.com/IQVO/amr-fleet-control/internal/domain/robot"
@@ -42,12 +44,19 @@ func answer(ctx context.Context, deps Deps, ec *a2asrv.ExecutorContext) a2a.Even
 	if p != nil {
 		return reply(ec, envelope{Problem: p}, p.summary())
 	}
-	ctx, span := otel.Tracer(tracerName).Start(ctx, "a2a.skill "+req.Skill)
+	// carry (plan 04 Task 20/21 review lessons, MCP parity): one "a2a.skill <id>" span per run with the GenAI
+	// operation and the authority every skill declares, named by a skill the card OFFERS or "unknown" (the
+	// caller-chosen id is never recorded: no unbounded span names, no caller text in telemetry). A problem answer
+	// records the problem's slug only and marks the span Error.
+	label := spanSkill(req.Skill)
+	ctx, span := otel.Tracer(tracerName).Start(ctx, "a2a.skill "+label, trace.WithAttributes(
+		attribute.String("a2a.skill", label), attribute.String("gen_ai.operation.name", "execute_tool"),
+		attribute.String("gen_ai.tool.name", label), attribute.String("warehouse.authority", authorityL1)))
 	defer span.End()
-	span.SetAttributes(attribute.String("a2a.skill", req.Skill))
 	data, summary, p := run(ctx, deps, req)
 	if p != nil {
-		span.SetStatus(codes.Error, p.Detail)
+		span.RecordError(errors.New(p.Code))
+		span.SetStatus(codes.Error, p.Code)
 		return reply(ec, envelope{Skill: req.Skill, Problem: p}, p.summary())
 	}
 	return reply(ec, envelope{Skill: req.Skill, Data: data}, summary)
@@ -91,6 +100,20 @@ func run(ctx context.Context, d Deps, req skillRequest) (map[string]any, string,
 	default:
 		return nil, "", problemUnknownSkill(req.Skill)
 	}
+}
+
+// skillUnknown labels the span of a skill id the card does not offer.
+const skillUnknown = "unknown"
+
+// authorityL1 is the authority every skill declares (its card tag is authority:L1): a pure read.
+const authorityL1 = "L1"
+
+// spanSkill is id when the card offers it, else skillUnknown.
+func spanSkill(id string) string {
+	if offered(id) {
+		return id
+	}
+	return skillUnknown
 }
 
 // offered reports whether the card lists skill id.
