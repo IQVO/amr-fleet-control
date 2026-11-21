@@ -211,6 +211,8 @@ func (u *unit) hold(r *robot.Robot) {
 		n, e := held(ms.Route(), ms.Reached(), ms.BaseEnd())
 		nodes, edges = append(nodes, n...), append(edges, e...)
 	}
+	n, e := u.underway(r) // carry (Task 8 review): a robot stopped mid-edge keeps its edge
+	nodes, edges = append(nodes, n...), append(edges, e...)
 	u.fm.Retain(key, nodes, edges)
 	if r.Node() == "" {
 		return
