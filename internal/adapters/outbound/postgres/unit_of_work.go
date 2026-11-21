@@ -149,9 +149,11 @@ const LockTimeout = "5s"
 // with it and never leak to the next client of the server connection.
 const setLocalTimeouts = "SET LOCAL statement_timeout = '" + StatementTimeout + "'; SET LOCAL lock_timeout = '" + LockTimeout + "'"
 
-// begin starts a READ COMMITTED transaction with the timeouts set LOCAL to it.
+// begin starts a READ COMMITTED transaction with the timeouts set LOCAL to it: the only way this adapter opens a
+// transaction (UnitOfWork.Do, inTx, the relay's Drain). carry (P4-R17 parity): on a NewReadOnlyPool pool it is
+// BEGIN READ ONLY (txOptions).
 func begin(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	tx, err := pool.BeginTx(ctx, txOptions(pool))
 	if err != nil {
 		return nil, err
 	}
