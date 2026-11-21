@@ -210,6 +210,12 @@ func (u *unit) hold(r *robot.Robot) {
 	if ms := u.missionOf(key); ms != nil {
 		n, e := held(ms.Route(), ms.Reached(), ms.BaseEnd())
 		nodes, edges = append(nodes, n...), append(edges, e...)
+	} else if r.Report().Pending && r.AwaitingAction() != "" {
+		// carry (Task 9 review): no active mission owns the order the robot still runs and its
+		// cancel is unanswered (a recover- cancel after a give-up, or a failed leg's cancelOrder),
+		// so it keeps everything it holds until it reports no pending order.
+		n, e := u.fm.Held(key)
+		nodes, edges = append(nodes, n...), append(edges, e...)
 	} else {
 		// carry (Task 8 review): a robot stopped mid-edge keeps its edge.
 		// carry (Task 9 review): only without an active mission (after a cancel); a robot driving

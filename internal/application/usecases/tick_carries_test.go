@@ -1,6 +1,8 @@
 package usecases_test
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +131,50 @@ func TestAnUnansweredCancelOfAPendingOrderHandsTheRobotToARecoverCancel(t *testi
 	if r, _ := h.robots.Get(ctx, rid("R1")); r.MissionID() != "" || r.AwaitingAction() != ia[4].ID || r.Assignable(20) {
 		t.Fatalf("robot = %+v", r.Snapshot())
 	}
+	recoverCancelKeepsTheBase(t, h, ia[4].ID)
+}
+
+// recoverCancelKeepsTheBase continues TestAnUnansweredCancelOfAPendingOrderHandsTheRobotToARecoverCancel
+// (split out for cyclop).
+//
+// carry (Task 9 review) (b): the robot may still run the order whose cancel went unanswered, so
+// until it reports the recover- cancel FINISHED and no pending order it keeps everything it held.
+func recoverCancelKeepsTheBase(t *testing.T, h *harness, recoverID string) {
+	t.Helper()
+	base := [2][]string{{"A", "ASRS1-OUT1", "P1"}, {"A-ASRS1-OUT1", "P1-A"}}
+	if got := heldBy(h, "EMU/R1"); got != fmt.Sprint(base) {
+		t.Fatalf("after the give-up R1 holds %s, want its whole base %v", got, base)
+	}
+	h.report("R1", func(r *robot.Report) { r.Battery = 89 }) // still pending, recover- unanswered
+	if got := heldBy(h, "EMU/R1"); got != fmt.Sprint(base) {
+		t.Fatalf("a pending robot awaiting its recover- cancel holds %s, want %v", got, base)
+	}
+	h.report("R1", func(r *robot.Report) {
+		r.Pending = false
+		setAction(r, robot.ActionState{ID: recoverID, Status: robot.ActionFinished}, true)
+	})
+	if got, want := heldBy(h, "EMU/R1"), fmt.Sprint([2][]string{{"P1"}, nil}); got != want {
+		t.Fatalf("after recover- FINISHED R1 holds %s, want %s", got, want)
+	}
+}
+
+// heldBy renders the nodes and edges the fleet record reserves for robot, sorted.
+func heldBy(h *harness, robot string) string {
+	rec, _, _ := h.fleets.Get(ctx, "AMR1")
+	var out [2][]string
+	for id, k := range rec.Reservations.Nodes {
+		if k == robot {
+			out[0] = append(out[0], id)
+		}
+	}
+	for id, k := range rec.Reservations.Edges {
+		if k == robot {
+			out[1] = append(out[1], id)
+		}
+	}
+	slices.Sort(out[0])
+	slices.Sort(out[1])
+	return fmt.Sprint(out)
 }
 
 // carry (Task 8 review): the resend limit's ORDER_REJECTED carries the robot's newest rejection

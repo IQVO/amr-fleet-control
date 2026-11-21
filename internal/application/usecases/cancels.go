@@ -63,9 +63,11 @@ func (u *unit) endCancel(ms *mission.Mission, r *robot.Robot, cancel bool) error
 		r.AwaitAction("")
 		u.touchR(r)
 	}
-	u.release(ms, cancel)
+	// carry (Task 9 review): the recover- cancel is queued before release holds the robot, so a
+	// robot still reporting the pending order keeps its whole base (hold).
 	if r != nil && !cancel && r.Online() {
 		u.unowned(r, r.Report())
 	}
+	u.release(ms, cancel)
 	return nil
 }
