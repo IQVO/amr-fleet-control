@@ -84,10 +84,16 @@ func wire(ctx context.Context, cfg config, log *slog.Logger) (*app, error) {
 		inboundhttp.Dependency{Name: "kafka", Check: kafkaCheck(cfg.Brokers)},
 		inboundhttp.Dependency{Name: "mqtt", Check: a.mqttCheck})
 	idem := inboundhttp.NewIdempotency(a.idem, a.svc, system.Clock{}) // rulings P3-R10, P3-R15: the Service, so its serialized UoW
-	router := inboundhttp.NewRouter(&inboundhttp.Server{Service: a.svc, Idempotency: idem.Middleware, Readiness: a.readiness,
-		ServiceName: cfg.ServiceName}, log)
-	a.server = &http.Server{Handler: router, ReadHeaderTimeout: 5 * time.Second}
+	a.server = newHTTPServer(cfg, &inboundhttp.Server{Service: a.svc, Idempotency: idem.Middleware, Readiness: a.readiness}, log)
 	return a, nil
+}
+
+// newHTTPServer builds the REST server over s; the router's spans and metric series are named
+// after OTEL_SERVICE_NAME. carry (Task 15 review): the name comes from the config, pinned by
+// TestTheRouterIsNamedAfterTheConfiguredServiceName.
+func newHTTPServer(cfg config, s *inboundhttp.Server, log *slog.Logger) *http.Server {
+	s.ServiceName = cfg.ServiceName
+	return &http.Server{Handler: inboundhttp.NewRouter(s, log), ReadHeaderTimeout: 5 * time.Second}
 }
 
 func (a *app) mqttCheck(context.Context) error {
