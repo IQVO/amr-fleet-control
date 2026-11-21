@@ -56,7 +56,8 @@ var agentAllowedSelectors = map[string][]string{
 	"ports": {},
 	"usecases": {"NewReader", "DefaultConfig", "Config", "FleetView", "LegView", "RobotView",
 		"ErrFleetNotFound", "ErrLegNotFound", "ErrRobotNotFound"},
-	"postgres": {"MigrationsURL", "RunMigrations", "NewPool", "NewRobots", "NewMissions"},
+	// carry (P4-R17 parity): the read pool is NewReadOnlyPool (every transaction READ ONLY); NewPool is cmd/api's.
+	"postgres": {"MigrationsURL", "RunMigrations", "NewReadOnlyPool", "NewRobots", "NewMissions"},
 }
 
 // agentForbiddenImports are import-path fragments no agent source may use, and why.
@@ -285,6 +286,8 @@ func TestAgentReadOnlySensorBites(t *testing.T) {
 		"an aliased port":           "package x\nimport p \"" + modulePath + "/internal/application/ports\"\nvar _ = p.UnitOfWork\n",
 		"an aliased guarded import": "package x\nimport uc \"" + modulePath + "/internal/application/usecases\"\nvar _ = uc.NewReader\n",
 		"a dot import":              "package x\nimport . \"" + modulePath + "/internal/application/usecases\"\nvar _ = NewService\n",
+		// carry (P4-R17 parity): an agent's pool is read-only; cmd/api's read-write NewPool is refused.
+		"a read-write pool": "package x\nvar _ = postgres.NewPool\n",
 	}
 	for name, src := range bad {
 		if got, err := agentSourceViolations(mcpSurface, "fixture.go", src); err != nil || len(got) == 0 {

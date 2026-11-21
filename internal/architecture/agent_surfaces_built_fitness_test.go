@@ -40,7 +40,7 @@ func TestTheSensorRulesBiteOnEverySurface(t *testing.T) {
 		"kafka-go":                   "package x\nimport _ \"github.com/segmentio/kafka-go\"\n",
 		"paho":                       "package x\nimport _ \"github.com/eclipse/paho.mqtt.golang\"\n",
 		"a write method on a repo":   "package x\n" + pg + "func f() { _ = postgres.NewRobots(nil).Save(ctx, nil) }\n",
-		"raw SQL through pool.Query": "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); _, _ = p.Query(ctx, \"DELETE FROM missions\") }\n",
+		"raw SQL through pool.Query": "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); _, _ = p.Query(ctx, \"DELETE FROM missions\") }\n",
 		"raw SQL through QueryRow":   "package x\nfunc f(p pool) { _ = p.QueryRow(ctx, \"DELETE FROM missions RETURNING 1\") }\n",
 		"a pooled connection":        "package x\nfunc f(p pool) { c, _ := p.Acquire(ctx); _ = c.Conn().PgConn() }\n",
 		"a pgx import":               "package x\nimport _ \"github.com/jackc/pgx/v5/pgxpool\"\n",

@@ -143,7 +143,7 @@ func buildReads(ctx context.Context, cfg bootConfig) (readSide, error) {
 	if err := postgres.RunMigrations(cfg.migrationsURL); err != nil {
 		return readSide{}, fmt.Errorf("migrations: %w", err)
 	}
-	pool, err := postgres.NewPool(ctx, cfg.databaseURL)
+	pool, err := postgres.NewReadOnlyPool(ctx, cfg.databaseURL) // carry (P4-R17 parity): every transaction READ ONLY
 	if err != nil {
 		return readSide{}, fmt.Errorf("postgres: %w", err)
 	}

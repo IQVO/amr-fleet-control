@@ -20,7 +20,7 @@ import (
 //
 // carry (Task 18 review): the pool's raw-SQL entry points are refused too (Query, QueryRow, Acquire,
 // AcquireFunc, AcquireAllIdle, Conn, PgConn, ExecParams, Hijack): Query/QueryRow run ANY SQL, so a pool built
-// by the allowlisted postgres.NewPool is a write seam without them. The only legit pool method in agent
+// by the allowlisted postgres.NewReadOnlyPool is a write seam without them. The only legit pool method in agent
 // sources is Close; the Reader's own reads go through the postgres adapter, never a raw pool call.
 //
 // False-positive allowances, by design: a package-qualified FUNCTION is not a method and is judged by the
@@ -37,7 +37,7 @@ var agentWriteVerbs = []string{"Save", "Insert", "Exec", "Begin", "BeginTx", "Co
 // no agent source needs one today.
 var agentWriteVerbAllowances = map[string]string{}
 
-// agentRawDriverImports are refused outright: the read pool is built by postgres.NewPool only, so a raw driver
+// agentRawDriverImports are refused outright: the read pool is built by postgres.NewReadOnlyPool only, so a raw driver
 // import can only mean a second, unguarded way to the database.
 var agentRawDriverImports = []string{"github.com/jackc/pgx", "database/sql"}
 
@@ -49,7 +49,7 @@ func agentWriteMethodViolations(f *ast.File, names map[string]string) []string {
 		if path, err := strconv.Unquote(imp.Path.Value); err == nil {
 			for _, raw := range agentRawDriverImports {
 				if path == raw || strings.HasPrefix(path, raw+"/") {
-					out = append(out, "imports "+path+": a raw database driver (the read pool comes from postgres.NewPool only)")
+					out = append(out, "imports "+path+": a raw database driver (the read pool comes from postgres.NewReadOnlyPool only)")
 				}
 			}
 		}
@@ -81,16 +81,16 @@ func TestAgentReadOnlySensorRefusesWriteMethodsAndRawDrivers(t *testing.T) {
 		"a write method on a constructed repo": "package x\n" + pg + "func f() { _ = postgres.NewRobots(nil).Save(ctx, nil) }\n",
 		"a write method on a repo variable":    "package x\n" + pg + "func f() { r := postgres.NewMissions(nil); _ = r.Insert(ctx, nil) }\n",
 		"Update on the missions repo":          "package x\n" + pg + "func f() { _ = postgres.NewMissions(nil).Update(ctx, nil) }\n",
-		"Exec on the pool":                     "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); _, _ = p.Exec(ctx, \"DELETE FROM missions\") }\n",
+		"Exec on the pool":                     "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); _, _ = p.Exec(ctx, \"DELETE FROM missions\") }\n",
 		"a method value of a write":            "package x\n" + pg + "func f() { save := postgres.NewRobots(nil).Save; _ = save }\n",
 		"a write method through a field":       "package x\nfunc (d deps) f() { _, _ = d.pool.Begin(ctx) }\n",
 		"a method expression of a write":       "package x\n" + pg + "var _ = (*postgres.Robots).Save\n",
 		"a write use case on the reader":       "package x\nfunc f(r reader) { _, _ = r.RequestLeg(ctx, req) }\n",
 		"the reader's unit of work":            "package x\nfunc f(r reader) { _ = r.UnitOfWork() }\n",
 		// carry (Task 18 review): raw SQL through the pool.
-		"raw SQL through pool.Query":    "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); _, _ = p.Query(ctx, \"DELETE FROM missions\") }\n",
-		"raw SQL through pool.QueryRow": "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); _ = p.QueryRow(ctx, \"UPDATE fleets SET map_version = 1 RETURNING 1\") }\n",
-		"a pooled connection":           "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); c, _ := p.Acquire(ctx); _ = c.Conn().PgConn().ExecParams(ctx, \"DELETE FROM missions\", nil, nil, nil, nil) }\n",
+		"raw SQL through pool.Query":    "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); _, _ = p.Query(ctx, \"DELETE FROM missions\") }\n",
+		"raw SQL through pool.QueryRow": "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); _ = p.QueryRow(ctx, \"UPDATE fleets SET map_version = 1 RETURNING 1\") }\n",
+		"a pooled connection":           "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); c, _ := p.Acquire(ctx); _ = c.Conn().PgConn().ExecParams(ctx, \"DELETE FROM missions\", nil, nil, nil, nil) }\n",
 		"a pgx import":                  "package x\nimport _ \"github.com/jackc/pgx/v5/pgxpool\"\n",
 		"a pgx root import":             "package x\nimport _ \"github.com/jackc/pgx/v5\"\n",
 		"a database/sql import":         "package x\nimport _ \"database/sql\"\n",
@@ -105,7 +105,7 @@ func TestAgentReadOnlySensorRefusesWriteMethodsAndRawDrivers(t *testing.T) {
 	}
 	// The read wiring, package-qualified slice/time helpers and non-write methods stay allowed.
 	good := "package x\nimport (\n\"slices\"\n\"time\"\n)\n" + pg +
-		"func f() { pool, _ := postgres.NewPool(ctx, dsn); defer pool.Close(); _ = pool.Ping(ctx)\n" +
+		"func f() { pool, _ := postgres.NewReadOnlyPool(ctx, dsn); defer pool.Close(); _ = pool.Ping(ctx)\n" +
 		"r, _ := usecases.NewReader(m, usecases.DefaultConfig(), postgres.NewRobots(pool), postgres.NewMissions(pool), clock)\n" +
 		"_, _ = r.Fleet(ctx, id); _, _ = r.OpenLegs(ctx, id); s := slices.Insert(xs, 0, 1); _ = slices.Delete(s, 0, 1); _ = time.Tick }\n"
 	if got, err := agentSourceViolations(mcpSurface, "fixture.go", good); err != nil || len(got) != 0 {
