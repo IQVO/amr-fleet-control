@@ -10,8 +10,11 @@ import (
 	"github.com/IQVO/amr-fleet-control/internal/adapters/vda5050"
 )
 
-// uplinkTopics are the robot topics the link subscribes, in this order.
-var uplinkTopics = []string{"state", "connection", "factsheet"}
+// uplinkTopics are the robot topics the link subscribes, in this order. carry (Task 11 review):
+// each subscription waits for its SUBACK, and the broker queues a filter's retained messages
+// before it handles the next SUBSCRIBE, so every robot's retained connection and factsheet
+// reach the worker before its first live state.
+var uplinkTopics = []string{"connection", "factsheet", "state"}
 
 // subscribeWait bounds how long NewFleetLink waits for the first subscription round (three
 // subscriptions of at most 10 s each).
