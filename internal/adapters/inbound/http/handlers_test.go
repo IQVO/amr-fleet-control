@@ -164,6 +164,25 @@ func TestAMapDependentRefusalReleasesItsKey(t *testing.T) {
 	}
 }
 
+// ruling P3-R14: `reference` is optional, but when present it is an Id (minLength 1): "" is the
+// FINAL 400 bad-request (stored, so the same key and body replay it); an absent one is accepted.
+func TestAnEmptyReferenceIsABadRequest(t *testing.T) {
+	a := newAPI(t, "R1")
+	empty := strings.Replace(legBody, `"tl-9"`, `""`, 1)
+	rec := a.do("POST", "/fleets/AMR1/legs", empty, "E")
+	if rec.Code != http.StatusBadRequest || decode(t, rec)["code"] != "bad-request" {
+		t.Fatalf("reference \"\" = %d %s, want 400 bad-request", rec.Code, rec.Body)
+	}
+	if again := a.do("POST", "/fleets/AMR1/legs", empty, "E"); again.Code != http.StatusBadRequest || again.Header().Get("Idempotency-Replayed") != "true" {
+		t.Fatalf("reference \"\" retried = %d replayed=%q, want the replayed FINAL 400", again.Code, again.Header().Get("Idempotency-Replayed"))
+	}
+	absent := `{"container_id":"C1","from_handoff_point_id":"ST1","to_handoff_point_id":"ASRS1-IN1"}`
+	ok := a.do("POST", "/fleets/AMR1/legs", absent, "A")
+	if _, has := decode(t, ok)["reference"]; ok.Code != http.StatusAccepted || has {
+		t.Fatalf("no reference = %d %s, want 202 without a reference", ok.Code, ok.Body)
+	}
+}
+
 func TestValidationAndNotFoundProblems(t *testing.T) {
 	a := newAPI(t, "R1")
 	cases := []struct {

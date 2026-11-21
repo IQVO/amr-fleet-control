@@ -11,7 +11,16 @@ type legRequest struct {
 	ContainerID string `json:"container_id"`
 	From        string `json:"from_handoff_point_id"`
 	To          string `json:"to_handoff_point_id"`
-	Reference   string `json:"reference,omitempty"`
+	// ruling P3-R14: a pointer, so an absent reference and "" differ (the contract's Id has minLength 1).
+	Reference *string `json:"reference,omitempty"`
+}
+
+// reference is the caller's reference, "" when absent.
+func (b legRequest) reference() string {
+	if b.Reference == nil {
+		return ""
+	}
+	return *b.Reference
 }
 
 func (b legRequest) validate() error {
@@ -20,8 +29,12 @@ func (b legRequest) validate() error {
 			return err
 		}
 	}
-	if b.Reference != "" {
-		if err := rejectNUL("reference", b.Reference); err != nil {
+	if b.Reference != nil {
+		// ruling P3-R14: present, reference is an Id; "" is a malformed body (400 bad-request, FINAL).
+		if *b.Reference == "" {
+			return fmt.Errorf("%w: reference must be omitted or 1 to 128 characters", errMalformedRequest)
+		}
+		if err := rejectNUL("reference", *b.Reference); err != nil {
 			return err
 		}
 	}

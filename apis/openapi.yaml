@@ -195,7 +195,7 @@ components:
         container_id: {$ref: '#/components/schemas/Id'}
         from_handoff_point_id: {$ref: '#/components/schemas/Id', description: Where the robot picks the container.}
         to_handoff_point_id: {$ref: '#/components/schemas/Id', description: Where the robot drops it; differs from from_handoff_point_id.}
-        reference: {$ref: '#/components/schemas/Id', description: The caller's reference (a transport request), echoed in the leg's events.}
+        reference: {$ref: '#/components/schemas/Id', description: 'The caller''s reference (a transport request), echoed in the leg''s events. Omit it when there is none; an empty string is `400 bad-request`.'}
     Leg:
       type: object
       required: [leg_id, fleet_id, container_id, from_handoff_point_id, to_handoff_point_id, status, map_version, accepted_at]

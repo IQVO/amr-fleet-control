@@ -80,7 +80,7 @@ func (s *Server) handleRequestLeg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.Service.RequestLeg(r.Context(), usecases.LegRequest{FleetID: p["fleetId"], ContainerID: body.ContainerID,
-		From: body.From, To: body.To, Reference: body.Reference})
+		From: body.From, To: body.To, Reference: body.reference()})
 	if err != nil {
 		writeError(w, r, err)
 		return
