@@ -71,3 +71,37 @@ func (u *unit) endCancel(ms *mission.Mission, r *robot.Robot, cancel bool) error
 	u.release(ms, cancel)
 	return nil
 }
+
+// lostCancels forgets a cancelOrder no open CANCEL_REQUESTED leg owns (one sent as a mission ended,
+// or a recover- cancel) once the robot's latest report neither shows a pending order nor lists that
+// action: there is nothing left to cancel, and anything sent later reaches the robot after the
+// cancel (decision D18). It runs first in the tick, so only a cancel queued by an earlier unit of
+// work is forgotten; a CANCEL_REQUESTED leg's own cancel is left to cancelResends.
+//
+// carry (Task 9 review): such a cancel is never re-sent, so a lost one left the robot awaiting it,
+// and unassignable, for good.
+func (u *unit) lostCancels() {
+	for _, k := range u.keys {
+		r := u.robots[k]
+		id := r.AwaitingAction()
+		if id == "" || !r.Online() || u.cancelOwned(id) {
+			continue
+		}
+		rep := r.Report()
+		if _, listed := rep.Action(id); rep.Pending || listed {
+			continue
+		}
+		r.AwaitAction("")
+		u.touchR(r)
+	}
+}
+
+// cancelOwned: an open CANCEL_REQUESTED leg awaits the cancelOrder with this action id.
+func (u *unit) cancelOwned(id string) bool {
+	for _, ms := range u.missions {
+		if ms.Status() == mission.CancelRequested && ms.CancelActionID() == id {
+			return true
+		}
+	}
+	return false
+}

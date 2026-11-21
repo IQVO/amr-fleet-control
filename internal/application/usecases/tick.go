@@ -13,6 +13,7 @@ import (
 func (s *Service) Tick(ctx context.Context) error {
 	return s.inFleet(ctx, func(u *unit) error {
 		u.stale()
+		u.lostCancels() // carry (Task 9 review)
 		if err := u.timeouts(); err != nil {
 			return err
 		}
