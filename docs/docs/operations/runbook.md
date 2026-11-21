@@ -52,10 +52,10 @@ A command queued during the drain may stay unsent; after the restart the tick re
 every unit of work (decision D18, ruling P3-R10). Run exactly one replica, and replace it with `Recreate`, never a
 rolling update: two processes would both send orders and reserve nodes.
 
-:::note
-The chart that enforces this (`replicaCount` other than 1 refused for the api component, strategy `Recreate`) is
-Task 21 and not built yet. `cmd/mcp` and `cmd/a2a` are read-only and may scale.
-:::
+The chart enforces it: it refuses to render a `replicaCount` other than 1 for the api component, the api Deployment
+uses strategy `Recreate`, and `terminationGracePeriodSeconds` defaults to 45 (the stop sequence is bounded at about
+20 s; the chart refuses less than 30). `cmd/mcp` and `cmd/a2a` are read-only and may scale (`mcp.replicaCount`,
+`a2a.replicaCount`).
 
 ## What a restart does
 

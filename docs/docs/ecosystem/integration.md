@@ -19,7 +19,8 @@ amr-fleet-control's relationships are numbered as on the WCS context map (wareho
 
 ## Relationship 4: inbound REST from material-flow-control
 
-Base path: the Service `amr-fleet-control` on `:8080`, through Kong at `/api/amr-fleet-control`. `{fleetId}` is the
+Base path: the Service `amr-fleet-control` on `:8080`, through Kong at `/api/amr-fleet-control` (the chart's HTTPRoute,
+prefix stripped; live once warehouse-infra registers the release, Task 25). `{fleetId}` is the
 map file's `fleetId` (example `AMR1`); a handoff point id is a map node's `handoffPoint` (example `ASRS1-OUT1`, `ST1`).
 Every POST requires `Idempotency-Key` (1-128 characters); a replayed answer carries `Idempotency-Replayed: true`.
 Bodies snake_case; errors RFC 9457 `application/problem+json` with `code`.
@@ -72,6 +73,6 @@ message.
 
 ## Read-only consumers
 
-warehouse-ops-agent and warehouse-console read through `cmd/mcp` (Kong `/api/mcp/amr-fleet-control`) and `cmd/a2a`
-(Kong `/api/a2a/amr-fleet-control`), authority L1 ([MCP and A2A](/docs/mcp/tools)). Neither can request or cancel a
+warehouse-ops-agent and warehouse-console read through `cmd/mcp` (Kong `/api/mcp/amr-fleet-control`, rewritten to
+`/mcp`) and `cmd/a2a` (Kong `/api/a2a/amr-fleet-control`, rewritten to `/`), authority L1 ([MCP and A2A](/docs/mcp/tools)). Neither can request or cancel a
 leg: that is material-flow-control's REST call.

@@ -26,9 +26,9 @@ never reads a database URL from the environment (`TestPostgresIntegrationTestsUs
 | Integration: Kafka | `internal/adapters/outbound/kafka/relay_sink_latency_integration_test.go` against `confluent-local` 7.6.1 | `make integration` |
 | Integration: binaries | `cmd/api/{boot,boot_order}_integration_test.go`, `cmd/mcp/{main,dsn}_integration_test.go`, `cmd/a2a/{main,dsn}_integration_test.go` | `make integration` |
 | End to end | `cmd/api/e2e_emulator_integration_test.go`: Postgres, Kafka, Mosquitto and the REAL emulator robots (`EQUIPMENT_EMULATOR_IMAGE`, default `equipment-emulator:e2e`, built from equipment-emulator `v0.1.0` / `b58201e`): a station-to-port leg, a `PICK_FAILED` `LOAD_NOT_AVAILABLE` from an empty output port, a pick from an output port after seed + `RETRIEVE`, a blocked robot failing `ROBOT_BLOCKED`, charging below the threshold, a disconnected robot leaving the online count | `make integration` |
+| Chart | `charts/amr-fleet-control/tests/render_test.sh` (the api env equals what `cmd/api` and the telemetry adapter read; the mcp/a2a env exact, both DSNs from the Secret, no Kafka or MQTT; one replica, `Recreate`, grace >= 30 s; probes; the default map is `config/map.example.yaml`; a render over a byte copy of warehouse-infra's `_platform.yaml`; every refusal), `test_service_selectors.py` (each Service selects one component), `test_kong_config.py` (routes, rewrites, plugins, no auth plugin, CORS headers and origin) | `bash charts/amr-fleet-control/tests/render_test.sh`, `python3 charts/amr-fleet-control/tests/test_*.py` (CI `chart-tests`) |
 
 :::note
-Chart tests (`render_test.sh`, `test_service_selectors.py`, `test_kong_config.py`) arrive with the chart in Task 21.
 The mutation thresholds (`.gremlins.yaml`, target 99/99 efficacy and mutant coverage) are measured per package in
 Task 22; until then `.gremlins.yaml` gates at 0 and this page has no measured numbers.
 :::

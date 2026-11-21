@@ -73,10 +73,11 @@ rule). MCP at `/mcp` (`:8090`), A2A at `/a2a` (`:8093`), both read-only.
 
 ## Helm chart
 
-`charts/amr-fleet-control` (lands in Task 21; not in the repository yet): the api Deployment (exactly one replica,
-Recreate), optional mcp and a2a Deployments, Services, a ConfigMap with the environment and `map.yaml`, HTTPRoutes for
-`/api/amr-fleet-control`, `/api/mcp/amr-fleet-control` and `/api/a2a/amr-fleet-control`, and the three default-off
-KongPlugins.
+`charts/amr-fleet-control`: the api Deployment (exactly one replica, Recreate, grace 45 s), optional read-only mcp and
+a2a Deployments, Services, a ConfigMap with the environment and `map.yaml` (default `config/map.example.yaml`), a
+Secret for the database, default-off HTTPRoutes for `/api/amr-fleet-control`, `/api/mcp/amr-fleet-control` and
+`/api/a2a/amr-fleet-control`, and the three default-off KongPlugins (`cors`, `prometheus`, `opentelemetry`). It reads
+warehouse-infra's `_platform.yaml` keys and refuses to render without Postgres, Kafka and MQTT.
 
 ## Local development
 
@@ -89,8 +90,8 @@ image named by `EQUIPMENT_EMULATOR_IMAGE`, default `equipment-emulator:e2e`:
 
 Unit and BDD (`features/amr_fleet_control.feature`, `make bdd`), integration (`//go:build integration`: Postgres
 repositories, the MQTT link against Mosquitto, the Kafka relay sink against Kafka, the end-to-end test against the
-emulator robots), chart tests (`render_test.sh`, `test_service_selectors.py`, `test_kong_config.py`; they land with
-the chart in Task 21), mutation (gremlins, thresholds in `.gremlins.yaml`, measured in Task 22).
+emulator robots), chart tests (`charts/amr-fleet-control/tests/`: `render_test.sh`, `test_service_selectors.py`,
+`test_kong_config.py`), mutation (gremlins, thresholds in `.gremlins.yaml`, measured in Task 22).
 
 ## Architecture Decision Records
 

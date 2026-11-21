@@ -45,8 +45,11 @@ W3C context, so a consumer's span for those facts is a root. The relay starts no
 
 ## Kong RED metrics
 
+The chart's HTTPRoutes (`/api/amr-fleet-control`, `/api/mcp/amr-fleet-control`, `/api/a2a/amr-fleet-control`) carry
+the chart's KongPlugins (`cors`, `prometheus`, `opentelemetry`; default off) through `konghq.com/plugins`. With the
+`prometheus` plugin on, Kong gives the edge RED metrics (rate, errors, duration) per route; the `opentelemetry` plugin
+sends Kong's spans to `kongPlugins.opentelemetry.tracesEndpoint` (warehouse-infra's `_platform.yaml` supplies it).
+
 :::note
-Once the chart's HTTPRoutes exist (Task 21: `/api/amr-fleet-control`, `/api/mcp/amr-fleet-control`,
-`/api/a2a/amr-fleet-control`) and the routes are registered with warehouse-infra (Task 25), Kong's Prometheus
-plugin gives the edge RED metrics (rate, errors, duration) per route. Not built yet.
+The routes and plugins go live when warehouse-infra registers the release and switches them on (Task 25).
 :::

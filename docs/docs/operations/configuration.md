@@ -27,7 +27,7 @@ Source: `cmd/api/config.go` (`loadConfig`), `usecases.DefaultConfig`, `usecases.
 | `OTEL_SERVICE_NAME` | `amr-fleet-control` | `service.name`; also names the otelchi spans and HTTP metric series. |
 | `SERVICE_VERSION` | `dev` (when empty) | `service.version`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty = telemetry off | OTLP/gRPC endpoint URL of the Collector (ADR 0005). |
-| `ENVIRONMENT` | `local` | Read by `telemetry.Setup` only, as the resource attribute `deployment.environment.name`; no behaviour depends on it. |
+| `ENVIRONMENT` | `local` | Read by `telemetry.Setup` only, as the resource attribute `deployment.environment.name`; no behaviour depends on it. The chart sets it from the value `environment` (default `production`) for api, mcp and a2a. |
 | `OUTBOX_INTERVAL_MS` | `250` | Relay poll interval; an integer >= 1. |
 | `OUTBOX_BATCH` | `100` | Rows per relay pass; an integer >= 1. |
 | `OUTBOX_MAX_ATTEMPTS` | `20` | Publish attempts per row before the relay passes it by; an integer >= 1 (0 would disable the cap). |
@@ -144,7 +144,9 @@ edges:
   - {id: H-ST2, a: H, b: ST2}
 ```
 
-:::note
-The Helm chart (`charts/amr-fleet-control`, Task 21) mounts this file from a ConfigMap and sets the environment from
-its values; it is not built yet.
-:::
+The Helm chart (`charts/amr-fleet-control`) mounts this file read-only at `/etc/amr-fleet-control/map.yaml` from its
+ConfigMap: the chart's `files/map.yaml` (a byte copy of `config/map.example.yaml`, kept equal by the chart's render
+test) unless the value `map` holds a whole map file as a string (`--set-file map=<file>`). The value is a string, not a
+YAML mapping, because Helm parses values as YAML 1.1 and reads the node key `y` as the boolean `true`. The chart sets
+every other variable on this page from its values (`config.*`, `kafka.brokers`, `mqtt.*`, `otel.*`, `environment`)
+and both database URLs from a Secret.

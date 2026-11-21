@@ -18,8 +18,9 @@ boundary). Neither can request or cancel a leg: that is material-flow-control's 
 | A2A (JSON-RPC) | `cmd/a2a`, `:8093` | `/a2a` and `/`, the card at `/.well-known/agent-card.json`, `GET /healthz` | `/api/a2a/amr-fleet-control` |
 
 :::note
-The Kong paths come with the chart's HTTPRoutes (Task 21) and the warehouse-infra registration (Task 25); in-cluster
-the Services `amr-fleet-control-mcp:8090` and `amr-fleet-control-a2a:8093` are the endpoints.
+The chart's HTTPRoutes (`mcp.route.enabled`, `a2a.route.enabled`, default off) serve the Kong paths once warehouse-infra
+registers the release (Task 25); in-cluster the Services `amr-fleet-control-mcp:8090` and `amr-fleet-control-a2a:8093`
+are the endpoints.
 :::
 
 ## MCP tools
