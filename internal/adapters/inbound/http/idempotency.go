@@ -129,6 +129,16 @@ func (m *Idempotency) serveFresh(w http.ResponseWriter, r *http.Request, next ht
 	var out *capture
 	var winner idempotency.IdempotencyRecord
 	err := m.UoW.Do(r.Context(), func(ctx context.Context) error {
+		// carry (Task 14 review): re-read the key under the serial lock. A concurrent duplicate
+		// that passed the first Lookup while the original held the lock replays the original's
+		// committed answer (or 409 idempotency-key-reused for another body) instead of re-running
+		// the use case, whose answer would now be a RETRYABLE refusal (container-busy, leg-ended).
+		if prior, found, err := m.Store.Lookup(ctx, key, m.notBefore()); err != nil {
+			return err
+		} else if found {
+			winner = prior
+			return errLostRace
+		}
 		out = &capture{header: http.Header{}}
 		next.ServeHTTP(out, r.WithContext(ctx))
 		if out.code == 0 {

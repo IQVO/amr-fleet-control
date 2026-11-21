@@ -250,3 +250,76 @@ func TestAnHTTPLegConcurrentWithTheTickDoesNotDeadlock(t *testing.T) {
 		t.Fatalf("orders sent = %d, want 1", n)
 	}
 }
+
+// carry (Task 14 review): a duplicate (same key, same body) that passed the first Lookup while the
+// original held the serial lock replays the original's 202 once it committed; it never re-runs
+// RequestLeg (which would answer the RETRYABLE 422 container-busy).
+func TestAConcurrentDuplicateOfASuccessReplaysTheAnswer(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	pause := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			once.Do(func() { close(entered); <-release })
+			next.ServeHTTP(w, r)
+		})
+	}
+	h, _ := newGatedAPI(t, memory.NewDownlink(), pause)
+	first := make(chan int, 1)
+	go func() { first <- postKeyed(h, "/fleets/AMR1/legs", legBody, "k1").Code }()
+	<-entered
+	second := make(chan [3]string, 1)
+	go func() {
+		rec := postKeyed(h, "/fleets/AMR1/legs", legBody, "k1")
+		second <- [3]string{http.StatusText(rec.Code), rec.Header().Get("Idempotency-Replayed"), rec.Body.String()}
+	}()
+	time.Sleep(50 * time.Millisecond) // the duplicate passed Lookup and waits on the serial lock
+	close(release)
+	if c := <-first; c != http.StatusAccepted {
+		t.Fatalf("first = %d", c)
+	}
+	got := <-second
+	if got[0] != http.StatusText(http.StatusAccepted) || got[1] != "true" {
+		t.Fatalf("concurrent duplicate = %s replayed=%q %s, want the replayed 202", got[0], got[1], got[2])
+	}
+}
+
+// carry (Task 14 review): a duplicate cancellation of a QUEUED leg waiting on the serial lock
+// replays the original's 200; it never re-runs CancelLeg (which would answer 409 leg-ended, a
+// refusal plan 04 treats as terminal although the leg WAS cancelled).
+func TestAConcurrentDuplicateOfAnImmediateCancelReplaysTheAnswer(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	pause := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/cancellation") {
+				once.Do(func() { close(entered); <-release })
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	h, _ := newGatedAPI(t, memory.NewDownlink(), pause)
+	_ = postKeyed(h, "/fleets/AMR1/legs", legBody, "k1") // C1 takes R1
+	q := postKeyed(h, "/fleets/AMR1/legs", strings.Replace(legBody, "C1", "C2", 1), "k2")
+	queued := decode(t, q)["leg_id"].(string)
+	if decode(t, q)["status"] != "QUEUED" {
+		t.Fatalf("second leg = %s", q.Body)
+	}
+	path := "/fleets/AMR1/legs/" + queued + "/cancellation"
+	first := make(chan int, 1)
+	go func() { first <- postKeyed(h, path, "", "c1").Code }()
+	<-entered
+	second := make(chan [3]string, 1)
+	go func() {
+		rec := postKeyed(h, path, "", "c1")
+		second <- [3]string{http.StatusText(rec.Code), rec.Header().Get("Idempotency-Replayed"), rec.Body.String()}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	if c := <-first; c != http.StatusOK {
+		t.Fatalf("first cancel = %d", c)
+	}
+	got := <-second
+	if got[0] != http.StatusText(http.StatusOK) || got[1] != "true" {
+		t.Fatalf("concurrent duplicate cancel = %s replayed=%q %s, want the replayed 200", got[0], got[1], got[2])
+	}
+}
