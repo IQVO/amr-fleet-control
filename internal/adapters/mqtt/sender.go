@@ -55,13 +55,19 @@ func (l *FleetLink) sendAll(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case c := <-l.out:
-			l.send(c)
+			if !l.send(ctx, c) {
+				return
+			}
 		}
 	}
 }
 
-// send publishes one command; a failure or a PUBACK timeout is logged, never retried here.
-func (l *FleetLink) send(c command) {
+// send publishes one command once the connection is open; a failure or a PUBACK timeout is
+// logged, never retried here. false: ctx ended while the connection was closed.
+func (l *FleetLink) send(ctx context.Context, c command) bool {
+	if !l.awaitOpen(ctx) {
+		return false
+	}
 	b, err := c.encode(l.headers, l.now())
 	if err == nil {
 		err = l.pub(c.topic, b)
@@ -69,4 +75,26 @@ func (l *FleetLink) send(c command) {
 	if err != nil {
 		l.log.Warn("robot command not sent; an unacknowledged order is resent by the tick", "topic", c.topic, "error", err)
 	}
+	return true
+}
+
+// awaitOpen waits (ctx-bounded) until the connection is open. carry (Task 11 review): ruling
+// P3-R10 across a reconnect: paho stores a publish made while the connection is down and resumes
+// it after the reconnect, possibly behind commands sent later, so the sender never hands it a
+// packet while the connection is closed; the commands wait in this FIFO instead, in order.
+func (l *FleetLink) awaitOpen(ctx context.Context) bool {
+	if l.open() {
+		return true
+	}
+	l.log.Warn("mqtt connection closed; robot commands wait in the downlink until it is open", "queued", len(l.out)+1)
+	t := time.NewTicker(l.openPoll)
+	defer t.Stop()
+	for !l.open() {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-t.C:
+		}
+	}
+	return true
 }

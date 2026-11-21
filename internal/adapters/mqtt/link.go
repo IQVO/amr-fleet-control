@@ -2,7 +2,6 @@ package mqtt
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -45,6 +44,9 @@ type FleetLink struct {
 	retryEvery time.Duration
 	connects   atomic.Int64
 	out        chan command // ruling P3-R10: the one FIFO of robot commands
+	// carry (Task 11 review): the sender publishes only while open() holds, polling every openPoll.
+	open     func() bool
+	openPoll time.Duration
 }
 
 // NewFleetLink connects and subscribes on every (re)connection; messages that arrive before
@@ -60,13 +62,8 @@ func NewFleetLink(brokerURL, clientID string, up Uplink, log *slog.Logger) (*Fle
 	if err := l.awaitSubscribed(c, subscribeWait); err != nil {
 		return nil, fmt.Errorf("mqtt subscribe %s as %s: %w", brokerURL, clientID, err)
 	}
-	l.client = c
-	l.pub = func(topic string, b []byte) error {
-		if !c.IsConnectionOpen() {
-			return errors.New("mqtt client disconnected")
-		}
-		return publish(c, topic, b)
-	}
+	l.client, l.open = c, c.IsConnectionOpen
+	l.pub = func(topic string, b []byte) error { return publish(c, topic, b) }
 	return l, nil
 }
 
@@ -85,9 +82,13 @@ func (l *FleetLink) session(o *pahomqtt.ClientOptions) {
 	})
 }
 
+// openPoll is how often a waiting sender checks whether the connection is open again.
+const openPoll = 50 * time.Millisecond
+
 func newFleetLink(up Uplink, log *slog.Logger) *FleetLink {
 	return &FleetLink{up: up, inbox: newInbox(InboxSize, "fleet", log), headers: vda5050.NewHeaders(), now: time.Now, log: log,
-		firstRound: make(chan error, 1), retryEvery: subscribeRetry, out: make(chan command, DownlinkSize)}
+		firstRound: make(chan error, 1), retryEvery: subscribeRetry, out: make(chan command, DownlinkSize),
+		open: func() bool { return true }, openPoll: openPoll}
 }
 
 // handler is paho's message handler: it only enqueues.
