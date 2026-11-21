@@ -52,7 +52,7 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error)
 	}
 	// READ COMMITTED is stated, not inherited: the aisle row locks (SELECT ... FOR UPDATE) and
 	// the partial unique index serialise writers; no snapshot isolation is wanted.
-	tx, err := u.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	tx, err := begin(ctx, u.pool)
 	if err != nil {
 		return fmt.Errorf("begin unit of work: %w", err)
 	}
@@ -96,7 +96,7 @@ func inTx(ctx context.Context, pool *pgxpool.Pool, fn func(q querier) error) err
 	if tx, ok := pgtx.From(ctx); ok {
 		return fn(tx)
 	}
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	tx, err := begin(ctx, pool)
 	if err != nil {
 		return err
 	}
@@ -105,4 +105,26 @@ func inTx(ctx context.Context, pool *pgxpool.Pool, fn func(q querier) error) err
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// LockTimeout bounds how long a statement waits for a row lock (the fleet row, decision D18).
+const LockTimeout = "5s"
+
+// carry (Task 13 review, plan 04 fleet item): PgBouncer runs pool_mode=transaction, so a
+// session-level SET (NewPool's AfterConnect) may sit on a server connection this transaction
+// never runs on. Every transaction therefore states its own timeouts with SET LOCAL: they end
+// with it and never leak to the next client of the server connection.
+const setLocalTimeouts = "SET LOCAL statement_timeout = '" + StatementTimeout + "'; SET LOCAL lock_timeout = '" + LockTimeout + "'"
+
+// begin starts a READ COMMITTED transaction with the timeouts set LOCAL to it.
+func begin(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, error) {
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, setLocalTimeouts); err != nil {
+		_ = tx.Rollback(context.WithoutCancel(ctx))
+		return nil, fmt.Errorf("set transaction timeouts: %w", err)
+	}
+	return tx, nil
 }

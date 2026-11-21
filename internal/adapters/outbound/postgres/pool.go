@@ -20,6 +20,9 @@ const StatementTimeout = "5s"
 
 // NewPool opens a connection pool against databaseURL with MaxConns and
 // StatementTimeout applied to every connection.
+//
+// carry (Task 13 review, plan 04 fleet item): behind PgBouncer (pool_mode=transaction) this
+// session SET is unreliable, so every transaction also sets its timeouts LOCAL (begin).
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
