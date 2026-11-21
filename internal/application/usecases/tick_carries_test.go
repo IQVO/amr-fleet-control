@@ -131,7 +131,37 @@ func TestAnUnansweredCancelOfAPendingOrderHandsTheRobotToARecoverCancel(t *testi
 	if r, _ := h.robots.Get(ctx, rid("R1")); r.MissionID() != "" || r.AwaitingAction() != ia[4].ID || r.Assignable(20) {
 		t.Fatalf("robot = %+v", r.Snapshot())
 	}
+	recoverCancelIsResent(t, h, ia[4].ID)
 	recoverCancelKeepsTheBase(t, h, ia[4].ID)
+}
+
+// recoverCancelIsResent continues TestAnUnansweredCancelOfAPendingOrderHandsTheRobotToARecoverCancel
+// (split out for cyclop).
+//
+// carry (Task 10 review): a robot that keeps reporting the pending order without listing its
+// unowned cancel would otherwise hold its base forever, so the cancel goes out again, with the same
+// action id, every ORDER_RESEND_AFTER until the robot answers it, across a reconnect too.
+func recoverCancelIsResent(t *testing.T, h *harness, recoverID string) {
+	t.Helper()
+	h.report("R1", func(r *robot.Report) { r.Battery = 89 }) // still pending, recover- not listed
+	h.tick(5 * time.Second)
+	if ia := h.instants("R1"); len(ia) != 6 || ia[5].ID != recoverID || ia[5].Type != vda.CancelOrder {
+		t.Fatalf("after ORDER_RESEND_AFTER instant actions = %+v, want %s sent again", ia, recoverID)
+	}
+	h.tick(time.Second) // the re-send restarted ORDER_RESEND_AFTER
+	if ia := h.instants("R1"); len(ia) != 6 {
+		t.Fatalf("1 s after the re-send instant actions = %+v, want no other", ia)
+	}
+	h.must(h.svc.HandleConnection(ctx, vda.Connection{Robot: rid("R1"), State: robot.ConnectionOffline, At: h.clock.Now()}))
+	h.must(h.svc.HandleConnection(ctx, vda.Connection{Robot: rid("R1"), State: robot.ConnectionOnline, At: h.clock.Now()}))
+	h.report("R1", func(r *robot.Report) { r.Battery = 88 })
+	h.tick(5 * time.Second)
+	if ia := h.instants("R1"); len(ia) != 7 || ia[6].ID != recoverID {
+		t.Fatalf("after a reconnect instant actions = %+v, want %s sent a 3rd time", ia, recoverID)
+	}
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.AwaitingAction() != recoverID || r.Assignable(20) {
+		t.Fatalf("robot = %+v, want it still awaiting %s", r.Snapshot(), recoverID)
+	}
 }
 
 // recoverCancelKeepsTheBase continues TestAnUnansweredCancelOfAPendingOrderHandsTheRobotToARecoverCancel
@@ -155,6 +185,9 @@ func recoverCancelKeepsTheBase(t *testing.T, h *harness, recoverID string) {
 	})
 	if got, want := heldBy(h, "EMU/R1"), fmt.Sprint([2][]string{{"P1"}, nil}); got != want {
 		t.Fatalf("after recover- FINISHED R1 holds %s, want %s", got, want)
+	}
+	if r, _ := h.robots.Get(ctx, rid("R1")); r.AwaitingAction() != "" || !r.Assignable(20) { // carry (Task 10 review)
+		t.Fatalf("after recover- FINISHED robot = %+v, want it assignable", r.Snapshot())
 	}
 }
 

@@ -162,7 +162,7 @@ func TestAssignabilityFollowsTheChargeThreshold(t *testing.T) {
 		t.Fatal("a robot off the map is neither assignable nor sent to charge")
 	}
 	r.ApplyReport(idleReport(90), "P1", t0)
-	r.AwaitAction("leg-1-cancel")
+	r.AwaitAction("leg-1-cancel", t0)
 	if r.Assignable(20) || r.NeedsCharge(20) || r.AwaitingAction() != "leg-1-cancel" {
 		t.Fatal("a robot with a cancel in flight is not offered an order")
 	}
@@ -186,7 +186,7 @@ func checkAwaitedActionOutcomes(t *testing.T, r *robot.Robot) {
 	if r.AwaitingAction() != "" || !r.Assignable(20) {
 		t.Fatal("a FINISHED cancel must clear the wait")
 	}
-	r.AwaitAction("x")
+	r.AwaitAction("x", t0)
 	rep.InstantActions = []robot.ActionState{{ID: "x", Status: robot.ActionFailed}}
 	r.ApplyReport(rep, "P1", t0)
 	if r.AwaitingAction() != "" {

@@ -34,7 +34,7 @@ func (u *unit) instant(id robot.ID, actions ...vda.Action) {
 // cancelOrder sends cancelOrder and keeps the robot out of assignment until it is answered.
 func (u *unit) cancelOrder(r *robot.Robot, actionID string) {
 	u.instant(r.ID(), vda.Action{Type: vda.CancelOrder, ID: actionID, Blocking: vda.BlockingHard})
-	r.AwaitAction(actionID)
+	r.AwaitAction(actionID, u.now)
 	u.touchR(r)
 }
 

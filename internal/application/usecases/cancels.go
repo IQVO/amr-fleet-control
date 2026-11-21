@@ -60,7 +60,7 @@ func (u *unit) endCancel(ms *mission.Mission, r *robot.Robot, cancel bool) error
 	u.raise(evs...)
 	u.ended = append(u.ended, endedLeg{outcome: "failed", reason: string(mission.ReasonCancelled)})
 	if r != nil && !cancel && r.AwaitingAction() == ms.CancelActionID() {
-		r.AwaitAction("")
+		r.AwaitAction("", u.now)
 		u.touchR(r)
 	}
 	// carry (Task 9 review): the recover- cancel is queued before release holds the robot, so a
@@ -80,6 +80,11 @@ func (u *unit) endCancel(ms *mission.Mission, r *robot.Robot, cancel bool) error
 //
 // carry (Task 9 review): such a cancel is never re-sent, so a lost one left the robot awaiting it,
 // and unassignable, for good.
+//
+// carry (Task 10 review): while the robot still reports a pending order and does not list the
+// cancel, the cancel goes out again with the same action id every ORDER_RESEND_AFTER until the
+// robot answers it; otherwise a lost one would let the robot hold its whole base forever (hold).
+// The robot updates the instant action in place, and one with no order left answers it FAILED.
 func (u *unit) lostCancels() {
 	for _, k := range u.keys {
 		r := u.robots[k]
@@ -88,11 +93,15 @@ func (u *unit) lostCancels() {
 			continue
 		}
 		rep := r.Report()
-		if _, listed := rep.Action(id); rep.Pending || listed {
-			continue
+		_, listed := rep.Action(id)
+		switch {
+		case listed:
+		case !rep.Pending:
+			r.AwaitAction("", u.now)
+			u.touchR(r)
+		case u.now.Sub(r.AwaitingSince()) >= u.s.cfg.ResendAfter:
+			u.cancelOrder(r, id)
 		}
-		r.AwaitAction("")
-		u.touchR(r)
 	}
 }
 

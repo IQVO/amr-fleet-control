@@ -81,3 +81,40 @@ func TestACancelRequestedLegsCancelIsNotForgotten(t *testing.T) {
 		t.Fatalf("robot = %+v", r.Snapshot())
 	}
 }
+
+// carry (Task 10 review): the unanswered cancelOrder of a failed leg, while the robot still reports
+// a pending order without listing it, goes out again with the same action id once
+// ORDER_RESEND_AFTER has passed since it was sent; never earlier, never to a robot that lists it,
+// and never to one that is not online.
+func TestAnUnansweredUnownedCancelOfAPendingRobotIsResent(t *testing.T) {
+	pending := func(h *harness) { h.report("R1", func(r *robot.Report) { r.OrderID, r.Pending = "ghost", true }) }
+	for name, c := range map[string]struct {
+		then  func(h *harness, id string)
+		after time.Duration
+		sent  int
+	}{
+		"due":     {func(h *harness, _ string) { pending(h) }, 5 * time.Second, 2},
+		"not due": {func(h *harness, _ string) { pending(h) }, 4 * time.Second, 1},
+		"listed": {func(h *harness, id string) {
+			pending(h)
+			h.report("R1", func(r *robot.Report) { setAction(r, robot.ActionState{ID: id, Status: robot.ActionWaiting}, true) })
+		}, 5 * time.Second, 1},
+		"offline": {func(h *harness, _ string) {
+			pending(h)
+			h.must(h.svc.HandleConnection(ctx, vda.Connection{Robot: rid("R1"), State: robot.ConnectionOffline, At: h.clock.Now()}))
+		}, 5 * time.Second, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, id := rejectedByTheResendLimit(t)
+			c.then(h, id)
+			h.tick(c.after)
+			ia := h.instants("R1")
+			if len(ia) != c.sent || ia[len(ia)-1].ID != id {
+				t.Fatalf("instant actions = %+v, want %d cancel(s) %s", ia, c.sent, id)
+			}
+			if r, _ := h.robots.Get(ctx, rid("R1")); r.AwaitingAction() != id || r.Assignable(20) {
+				t.Fatalf("robot = %+v, want it still awaiting %s", r.Snapshot(), id)
+			}
+		})
+	}
+}

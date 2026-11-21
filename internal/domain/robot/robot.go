@@ -85,6 +85,7 @@ type Snapshot struct {
 	HasFactsheet, Stale               bool
 	LastSeen, HeldSince, OfflineSince time.Time
 	AwaitingAction                    string
+	AwaitingSince                     time.Time // carry (Task 10 review): when the awaited action was last sent
 	StopChargeSent                    bool
 }
 
@@ -125,6 +126,9 @@ func (r *Robot) LastSeen() time.Time     { return r.s.LastSeen }
 func (r *Robot) HeldSince() time.Time    { return r.s.HeldSince }
 func (r *Robot) OfflineSince() time.Time { return r.s.OfflineSince }
 
+// AwaitingSince is when the awaited instant action was last sent (zero when none is awaited).
+func (r *Robot) AwaitingSince() time.Time { return r.s.AwaitingSince }
+
 // Online is true for a connected, fresh robot that has reported at least once.
 func (r *Robot) Online() bool {
 	return r.s.Connection == ConnectionOnline && !r.s.Stale && r.s.HasReport
@@ -151,7 +155,7 @@ func (r *Robot) ApplyReport(rep Report, node string, at time.Time) []any {
 	}
 	if r.s.AwaitingAction != "" {
 		if st, ok := rep.Action(r.s.AwaitingAction); ok && (st.Status == ActionFinished || st.Status == ActionFailed) {
-			r.s.AwaitingAction = ""
+			r.s.AwaitingAction, r.s.AwaitingSince = "", time.Time{}
 		}
 	}
 	return r.settle(prev, at, rep.At)
@@ -195,8 +199,16 @@ func (r *Robot) Release(missionID string, at time.Time) []any {
 	return r.settle(prev, at, time.Time{})
 }
 
-// AwaitAction marks an instant action (a cancelOrder) whose outcome must be seen first.
-func (r *Robot) AwaitAction(id string) { r.s.AwaitingAction = id }
+// AwaitAction marks an instant action (a cancelOrder) whose outcome must be seen first, sent at at;
+// an empty id stops awaiting.
+//
+// carry (Task 10 review): the send time lets the tick re-send a cancel no mission owns.
+func (r *Robot) AwaitAction(id string, at time.Time) {
+	r.s.AwaitingAction, r.s.AwaitingSince = id, at
+	if id == "" {
+		r.s.AwaitingSince = time.Time{}
+	}
+}
 
 // MarkStopChargeSent records that stopCharging went out for the current charge.
 func (r *Robot) MarkStopChargeSent() { r.s.StopChargeSent = true }
