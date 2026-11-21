@@ -9,8 +9,12 @@ import (
 	"time"
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/postgres"
+	"github.com/IQVO/amr-fleet-control/internal/application/fleetrow"
+	"github.com/IQVO/amr-fleet-control/internal/application/idempotency"
 	"github.com/IQVO/amr-fleet-control/internal/application/outbox"
 	"github.com/IQVO/amr-fleet-control/internal/application/ports"
+	"github.com/IQVO/amr-fleet-control/internal/domain/capacity"
+	"github.com/IQVO/amr-fleet-control/internal/domain/mission"
 	"github.com/IQVO/amr-fleet-control/internal/domain/robot"
 	"github.com/IQVO/amr-fleet-control/internal/testing/pgtest"
 )
@@ -82,6 +86,7 @@ func TestAWriteThroughTheReadOnlyPoolFailsWithSQLState25006(t *testing.T) {
 	}))
 	assertReadOnlyRefusal(t, "OutboxRepo.Insert", postgres.NewOutboxRepo(ro).Insert(ctx, outbox.Message{EventID: "ev-1",
 		Topic: "t", EventType: "t", Subject: "s", Key: []byte("k"), DataSchema: "urn", Value: []byte(`{}`)}))
+	refuseTheOtherRepositoryWrites(t, ctx, rw, ro)
 	assertReadOnlyRefusal(t, "a raw exec", postgres.ExecFor(ctx, ro, `DELETE FROM missions`))
 	var n int
 	assertReadOnlyRefusal(t, "a raw queryRow", postgres.QueryRowFor(ctx, ro, `UPDATE missions SET mission_id = mission_id RETURNING 1`, &n))
@@ -96,9 +101,62 @@ func TestAWriteThroughTheReadOnlyPoolFailsWithSQLState25006(t *testing.T) {
 	if _, err := postgres.NewRobots(rw).Get(ctx, r.ID()); !errors.Is(err, ports.ErrRobotNotFound) {
 		t.Fatalf("EMU/R2 after the refused writes = %v, want ErrRobotNotFound", err)
 	}
+	assertTheOtherRepositoryWritesLeftNothing(t, ctx, rw)
 	// cmd/api's pool stays read-write.
 	if err := postgres.NewMissions(rw).Insert(ctx, leg("leg-2", "C2")); err != nil {
 		t.Fatalf("the read-write pool refused a write: %v", err)
+	}
+}
+
+// carry (Task 19 review): every other repository write goes through begin too; overlay
+// task-19-review-probes/o2_fleets_bare (Fleets.Save on the bare pool) wrote through the read-only pool. leg-1 must
+// exist (QUEUED) on entry.
+func refuseTheOtherRepositoryWrites(t *testing.T, ctx context.Context, rw, ro *postgres.Pool) {
+	t.Helper()
+	rec := fleetrow.Record{MapVersion: "v1", Capacity: capacity.Snapshot{RobotsTotal: 1, At: t0}, HasCapacity: true}
+	assertReadOnlyRefusal(t, "Fleets.Save outside a unit", postgres.NewFleets(ro).Save(ctx, "AMR1", rec))
+	stored, err := postgres.NewMissions(rw).Get(ctx, "leg-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := stored.RequestCancel(t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	assertReadOnlyRefusal(t, "Missions.Update outside a unit", postgres.NewMissions(ro).Update(ctx, stored))
+	key := idempotency.IdempotencyRecord{Key: "k1", Fingerprint: "f", Status: 202, ContentType: "application/json", Body: []byte("{}"), CreatedAt: t0}
+	if err := postgres.NewIdempotencyStore(rw).Save(ctx, key, t0.Add(-24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	key2 := key
+	key2.Key = "k2"
+	assertReadOnlyRefusal(t, "IdempotencyStore.Save", postgres.NewIdempotencyStore(ro).Save(ctx, key2, t0.Add(-24*time.Hour)))
+	if _, err := postgres.NewIdempotencyStore(ro).Purge(ctx, t0.Add(time.Hour)); err == nil {
+		t.Error("IdempotencyStore.Purge through the read-only pool succeeded")
+	} else {
+		assertReadOnlyRefusal(t, "IdempotencyStore.Purge", err)
+	}
+}
+
+// assertTheOtherRepositoryWritesLeftNothing: the refused Fleets.Save, Missions.Update, IdempotencyStore.Save and
+// Purge changed no row.
+func assertTheOtherRepositoryWritesLeftNothing(t *testing.T, ctx context.Context, rw *postgres.Pool) {
+	t.Helper()
+	if _, ok, err := postgres.NewFleets(rw).Get(ctx, "AMR1"); ok || err != nil {
+		t.Fatalf("fleet AMR1 after the refused Fleets.Save: stored=%v %v, want no row", ok, err)
+	}
+	got, err := postgres.NewMissions(rw).Get(ctx, "leg-1")
+	if err != nil {
+		t.Fatalf("leg-1 after the refused Missions.Update = %v", err)
+	}
+	if got.Status() != mission.Queued {
+		t.Fatalf("leg-1 after the refused Missions.Update = %s, want QUEUED", got.Status())
+	}
+	idem := postgres.NewIdempotencyStore(rw)
+	if _, ok, err := idem.Lookup(ctx, "k2", t0.Add(-24*time.Hour)); ok || err != nil {
+		t.Fatalf("k2 after the refused Save: stored=%v %v, want no row", ok, err)
+	}
+	if _, ok, err := idem.Lookup(ctx, "k1", t0.Add(-24*time.Hour)); !ok || err != nil {
+		t.Fatalf("k1 after the refused Purge: stored=%v %v, want the row kept", ok, err)
 	}
 }
 

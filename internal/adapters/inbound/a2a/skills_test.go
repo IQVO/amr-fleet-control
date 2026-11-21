@@ -103,3 +103,23 @@ func TestTheCardIsReadOnlyAtL1(t *testing.T) {
 		t.Fatalf("skills = %v", ids)
 	}
 }
+
+// carry (Task 19 review): the card declares no security (fleet rule: no auth on REST, MCP or A2A) and carries the
+// configured version, never a constant. Mutants m_security (SecurityRequirements added) and m_version_ignored
+// survived every unit test before this pin.
+func TestTheCardDeclaresNoSecurityAndTheConfiguredVersion(t *testing.T) {
+	for _, v := range []string{"0.1.0", "dev"} {
+		card := inbounda2a.Card(inbounda2a.Config{AgentURL: "http://amr-fleet-control-a2a:8093/a2a", Version: v})
+		if card.SecuritySchemes != nil || card.SecurityRequirements != nil {
+			t.Errorf("card security = %+v / %+v, want none", card.SecuritySchemes, card.SecurityRequirements)
+		}
+		if card.Version != v {
+			t.Errorf("card.Version = %q, want the configured %q", card.Version, v)
+		}
+		for _, s := range card.Skills {
+			if s.SecurityRequirements != nil {
+				t.Errorf("skill %s security = %+v, want none", s.ID, s.SecurityRequirements)
+			}
+		}
+	}
+}

@@ -39,3 +39,13 @@ func TestTheCardAndHealthzAreServed(t *testing.T) {
 		t.Fatalf("healthz = %d", rec.Code)
 	}
 }
+
+// carry (Task 19 review): the card's version falls back to "dev" when SERVICE_VERSION is empty (plan 04 parity,
+// material-flow-control cmd/a2a/main_test.go); a set value is kept as is.
+func TestCardVersionFallsBackToDev(t *testing.T) {
+	for in, want := range map[string]string{"": "dev", "v1": "v1", "0.1.0": "0.1.0"} {
+		if got := cardVersion(in); got != want {
+			t.Errorf("cardVersion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

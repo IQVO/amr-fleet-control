@@ -116,13 +116,9 @@ func run(ctx context.Context, w io.Writer, getenv func(string) string) error {
 		_ = ln.Close()
 		return err
 	}
-	defer rs.close()              // after serve's drain, before the telemetry flush
-	version := cfg.serviceVersion // the card's version; telemetry.Setup applies the same "dev" fallback
-	if version == "" {
-		version = "dev"
-	}
+	defer rs.close() // after serve's drain, before the telemetry flush
 	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second,
-		Handler: newAgent(inbounda2a.Deps{Reads: rs.reads}, cfg.agentURL, version, logger, cfg.serviceName)}
+		Handler: newAgent(inbounda2a.Deps{Reads: rs.reads}, cfg.agentURL, cardVersion(cfg.serviceVersion), logger, cfg.serviceName)}
 	logger.Info("a2a agent listening (JSON-RPC)", "addr", ln.Addr().String())
 	return serve(ctx, srv, ln)
 }
@@ -176,4 +172,13 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
 func newLogger(w io.Writer, level string) *slog.Logger {
 	lvl, _ := telemetry.ParseLogLevel(level) // validated by loadBootConfig; the boot logger passes "info"
 	return slog.New(telemetry.WithTraceContext(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: lvl})))
+}
+
+// cardVersion is the Agent Card's version: SERVICE_VERSION, or "dev" when it is empty (telemetry.Setup applies the
+// same fallback to service.version). carry (Task 19 review): extracted so the fallback is pinned by a unit test.
+func cardVersion(v string) string {
+	if v == "" {
+		return "dev"
+	}
+	return v
 }
