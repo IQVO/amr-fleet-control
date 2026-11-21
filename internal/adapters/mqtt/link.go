@@ -38,6 +38,8 @@ type FleetLink struct {
 	pub     func(topic string, payload []byte) error
 	client  pahomqtt.Client
 	start   sync.Once
+	// running counts the worker, the tick and the sender started by Start (Wait).
+	running sync.WaitGroup
 	// carry (Task 11 review): the first subscription round reports to NewFleetLink.
 	firstRound chan error
 	firstOnce  sync.Once
@@ -106,14 +108,19 @@ func (l *FleetLink) handle(topic string, payload []byte) {
 	l.inbox.offer(func(ctx context.Context) { l.dispatch(ctx, topic, payload) })
 }
 
-// Start runs the worker and the tick until ctx ends.
+// Start runs the worker, the tick and the sender until ctx ends.
 func (l *FleetLink) Start(ctx context.Context) {
 	l.start.Do(func() {
-		go l.inbox.drain(ctx)
-		go l.runTicks(ctx)
-		go l.sendAll(ctx) // ruling P3-R10
+		l.running.Go(func() { l.inbox.drain(ctx) })
+		l.running.Go(func() { l.runTicks(ctx) })
+		l.running.Go(func() { l.sendAll(ctx) }) // ruling P3-R10
 	})
 }
+
+// Wait blocks until the worker, the tick and the sender Start ran have returned (at once when the
+// link never started). lesson (plan 04 Task 19 review): the composition root waits here before it
+// disconnects the link and closes the pool.
+func (l *FleetLink) Wait() { l.running.Wait() }
 
 func (l *FleetLink) runTicks(ctx context.Context) {
 	t := time.NewTicker(TickEvery)
@@ -196,9 +203,15 @@ func sameRobot(topic, header robot.ID) error {
 // Connected reports the broker connection (readiness).
 func (l *FleetLink) Connected() bool { return l.client != nil && l.client.IsConnectionOpen() }
 
-// Close disconnects.
+// Close disconnects and logs the robot commands left unsent (the sender's own exit log misses any
+// a draining HTTP request enqueued after it stopped; the tick resends them after a restart).
 func (l *FleetLink) Close() {
 	if l.client != nil {
 		l.client.Disconnect(250)
 	}
+	if n := len(l.out); n > 0 {
+		l.log.Warn("mqtt link disconnected; robot commands unsent", "unsent", n)
+		return
+	}
+	l.log.Info("mqtt link disconnected", "unsent", 0)
 }
