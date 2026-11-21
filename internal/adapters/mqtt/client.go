@@ -43,11 +43,7 @@ func publish(c pahomqtt.Client, topic string, payload []byte) error {
 }
 
 func subscribe(c pahomqtt.Client, topic string, h pahomqtt.MessageHandler) error {
-	tok := c.Subscribe(topic, 1, h)
-	if !tok.WaitTimeout(10 * time.Second) {
-		return fmt.Errorf("mqtt subscribe %s: timeout", topic)
-	}
-	return tok.Error()
+	return awaitSubscribe(topic, c.Subscribe(topic, 1, h), 10*time.Second)
 }
 
 // task is one unit of work for a link's worker.

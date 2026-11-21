@@ -36,13 +36,11 @@ type FleetLink struct {
 	pub     func(topic string, payload []byte) error
 	client  pahomqtt.Client
 	start   sync.Once
+	// carry (Task 11 review): the first subscription round reports to NewFleetLink.
+	firstRound chan error
+	firstOnce  sync.Once
+	retryEvery time.Duration
 }
-
-var uplinkTopics = []string{"state", "connection", "factsheet"}
-
-// subscribeWait bounds how long NewFleetLink waits for the first subscription round (three
-// subscriptions of at most 10 s each).
-const subscribeWait = 35 * time.Second
 
 // NewFleetLink connects and subscribes on every (re)connection; messages that arrive before
 // Start wait in the inbox. It returns once the first subscription round is done: paho runs
@@ -50,24 +48,14 @@ const subscribeWait = 35 * time.Second
 // NewFleetLink returned could reach the broker before the subscription and be lost.
 func NewFleetLink(brokerURL, clientID string, up Uplink, log *slog.Logger) (*FleetLink, error) {
 	l := newFleetLink(up, log)
-	subscribed := make(chan struct{})
-	var first sync.Once
 	c, err := connect(brokerURL, clientID, func(c pahomqtt.Client) {
-		for _, name := range uplinkTopics {
-			if err := subscribe(c, vda5050.Topic("+", "+", name), l.handler()); err != nil {
-				log.Warn("mqtt subscribe failed; retried on the next reconnect", "topic", name, "error", err)
-			}
-		}
-		first.Do(func() { close(subscribed) })
+		l.connected(func(filter string) error { return subscribe(c, filter, l.handler()) }, c.IsConnectionOpen)
 	})
 	if err != nil {
 		return nil, err
 	}
-	select {
-	case <-subscribed:
-	case <-time.After(subscribeWait):
-		c.Disconnect(0)
-		return nil, fmt.Errorf("mqtt subscribe %s as %s: no subscription round within %s", brokerURL, clientID, subscribeWait)
+	if err := l.awaitSubscribed(c, subscribeWait); err != nil {
+		return nil, fmt.Errorf("mqtt subscribe %s as %s: %w", brokerURL, clientID, err)
 	}
 	l.client = c
 	l.pub = func(topic string, b []byte) error {
@@ -80,7 +68,8 @@ func NewFleetLink(brokerURL, clientID string, up Uplink, log *slog.Logger) (*Fle
 }
 
 func newFleetLink(up Uplink, log *slog.Logger) *FleetLink {
-	return &FleetLink{up: up, inbox: newInbox(InboxSize, "fleet", log), headers: vda5050.NewHeaders(), now: time.Now, log: log}
+	return &FleetLink{up: up, inbox: newInbox(InboxSize, "fleet", log), headers: vda5050.NewHeaders(), now: time.Now, log: log,
+		firstRound: make(chan error, 1), retryEvery: subscribeRetry}
 }
 
 // handler is paho's message handler: it only enqueues.
