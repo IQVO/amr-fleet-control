@@ -11,7 +11,9 @@ import (
 	inboundhttp "github.com/IQVO/amr-fleet-control/internal/adapters/inbound/http"
 )
 
-const shutdownTimeout = 10 * time.Second
+// shutdownTimeout bounds the HTTP drain; a var so TestTheHTTPDrainIsBoundedByShutdownTimeout can
+// shorten it. carry (Task 16 review).
+var shutdownTimeout = 10 * time.Second
 
 // run boots the fleet side (the starts: connect the link, Recover), runs the loops and HTTP on ln
 // until ctx ends or Serve fails, then shuts down. lesson (plan 04 Task 19 review): readiness flips
