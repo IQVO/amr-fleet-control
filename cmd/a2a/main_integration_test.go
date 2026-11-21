@@ -167,6 +167,9 @@ func TestTheA2ABinaryServesPostgresReadsAndWritesNothing(t *testing.T) {
 			"A2A_AGENT_URL": "http://" + addr + "/a2a", "SERVICE_VERSION": "it-1"}))
 	}()
 	waitHealthy(t, "http://"+addr)
+	if v := servedCard(t, "http://"+addr).Version; v != "it-1" {
+		t.Fatalf("the card version = %q, want SERVICE_VERSION it-1", v)
+	}
 	exerciseEverySkill(t, "http://"+addr)
 	if after := fingerprints(t, url); !maps(before, after) {
 		t.Fatalf("the A2A binary changed the database:\nbefore %v\nafter  %v", before, after)
@@ -200,7 +203,7 @@ func servedCard(t *testing.T, base string) *a2a.AgentCard {
 func exerciseEverySkill(t *testing.T, base string) {
 	t.Helper()
 	card := servedCard(t, base)
-	if len(card.SupportedInterfaces) != 1 || card.SupportedInterfaces[0].URL != base+"/a2a" || card.Version != "it-1" || len(card.Skills) != 4 {
+	if len(card.SupportedInterfaces) != 1 || card.SupportedInterfaces[0].URL != base+"/a2a" || len(card.Skills) != 4 {
 		t.Fatalf("served card = %+v", card)
 	}
 	client, err := a2aclient.NewFromCard(context.Background(), card)
