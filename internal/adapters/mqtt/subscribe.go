@@ -60,6 +60,8 @@ func subscribeAll(sub func(filter string) error) ([]string, error) {
 // the first round hands its errors to NewFleetLink, which then fails; a later round retries
 // each failed filter every retryEvery while the connection stays open.
 func (l *FleetLink) connected(sub func(filter string) error, open func() bool) {
+	n := l.connects.Add(1)
+	l.log.Info("mqtt connected; subscribing", "connects", n, "reconnects", n-1)
 	failed, err := subscribeAll(sub)
 	first := false
 	l.firstOnce.Do(func() {

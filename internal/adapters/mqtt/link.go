@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pahomqtt "github.com/eclipse/paho.mqtt.golang"
@@ -40,6 +41,7 @@ type FleetLink struct {
 	firstRound chan error
 	firstOnce  sync.Once
 	retryEvery time.Duration
+	connects   atomic.Int64
 }
 
 // NewFleetLink connects and subscribes on every (re)connection; messages that arrive before
@@ -48,9 +50,7 @@ type FleetLink struct {
 // NewFleetLink returned could reach the broker before the subscription and be lost.
 func NewFleetLink(brokerURL, clientID string, up Uplink, log *slog.Logger) (*FleetLink, error) {
 	l := newFleetLink(up, log)
-	c, err := connect(brokerURL, clientID, func(c pahomqtt.Client) {
-		l.connected(func(filter string) error { return subscribe(c, filter, l.handler()) }, c.IsConnectionOpen)
-	})
+	c, err := connect(brokerURL, clientID, l.onConnect, l.session)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +65,21 @@ func NewFleetLink(brokerURL, clientID string, up Uplink, log *slog.Logger) (*Fle
 		return publish(c, topic, b)
 	}
 	return l, nil
+}
+
+// onConnect subscribes on every (re)connection (paho runs it on its own goroutine).
+func (l *FleetLink) onConnect(c pahomqtt.Client) {
+	l.connected(func(filter string) error { return subscribe(c, filter, l.handler()) }, c.IsConnectionOpen)
+}
+
+// session tunes the link's client. carry (Task 11 review): a lost connection is logged at WARN
+// with its error (connected logs every (re)connection at INFO with a counter), so a broker
+// outage shows in the logs before robots go stale. CleanSession stays true: every connection
+// subscribes again and the retained connection and factsheet are replayed.
+func (l *FleetLink) session(o *pahomqtt.ClientOptions) {
+	o.SetCleanSession(true).SetConnectionLostHandler(func(_ pahomqtt.Client, err error) {
+		l.log.Warn("mqtt connection lost; reconnecting every 2 s", "error", err)
+	})
 }
 
 func newFleetLink(up Uplink, log *slog.Logger) *FleetLink {

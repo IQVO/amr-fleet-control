@@ -23,9 +23,13 @@ func clientOptions(brokerURL, clientID string, onConnect func(pahomqtt.Client)) 
 }
 
 // connect opens a client; onConnect runs after every (re)connection, so subscriptions of the
-// clean session are made again there.
-func connect(brokerURL, clientID string, onConnect func(pahomqtt.Client)) (pahomqtt.Client, error) {
-	c := pahomqtt.NewClient(clientOptions(brokerURL, clientID, onConnect))
+// clean session are made again there. tune adjusts the options before connecting.
+func connect(brokerURL, clientID string, onConnect func(pahomqtt.Client), tune ...func(*pahomqtt.ClientOptions)) (pahomqtt.Client, error) {
+	o := clientOptions(brokerURL, clientID, onConnect)
+	for _, f := range tune {
+		f(o)
+	}
+	c := pahomqtt.NewClient(o)
 	tok := c.Connect()
 	if !tok.WaitTimeout(15*time.Second) || tok.Error() != nil {
 		c.Disconnect(0)
