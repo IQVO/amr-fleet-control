@@ -42,15 +42,18 @@ func runMain(w io.Writer, getenv func(string) string) error {
 	defer flush()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	a, err := wire(ctx, cfg, log)
-	if err != nil {
-		return err
-	}
-	defer a.close()
+	// lesson (plan 04 Task 19 review, finding 7): listen before wire, so a busy address fails the
+	// boot before migrations ran or the pool opened; a failed wire releases the listener.
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return err
 	}
+	a, err := wire(ctx, cfg, log)
+	if err != nil {
+		_ = ln.Close()
+		return err
+	}
+	defer a.close()
 	return a.run(ctx, ln)
 }
 
