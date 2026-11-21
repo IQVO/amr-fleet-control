@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	inboundhttp "github.com/IQVO/amr-fleet-control/internal/adapters/inbound/http"
@@ -12,37 +13,48 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
-// run connects the link, recovers the fleet, starts the worker, the relay, the purger and HTTP
-// on ln until ctx ends, then drains.
+// run boots the fleet side (the starts: connect the link, Recover), runs the loops and HTTP on ln
+// until ctx ends or Serve fails, then shuts down. lesson (plan 04 Task 19 review): readiness flips
+// first; then the loops' own context ends (the link's worker, tick and sender, the relay and the
+// purger stop) while HTTP drains (bounded by shutdownTimeout); once every loop has returned, close
+// disconnects the link and closes the relay sink and the pool; main flushes telemetry last. Worst
+// case ~10 s drain + a straggling unit's 5 s statement/lock timeouts + the 0.25 s disconnect + the
+// 5 s flush, well inside a 30 s termination grace.
 func (a *app) run(ctx context.Context, ln net.Listener) error {
-	if err := a.connect(); err != nil {
-		return err
-	}
-	if err := a.svc.Recover(ctx); err != nil {
-		return err
-	}
-	a.down.link.Start(ctx)
-	go func() { _ = a.relay.Run(ctx) }()
-	go a.purge(ctx)
-	go func() {
-		<-ctx.Done()
-		a.readiness.SetNotReady()
-	}()
-	errCh := make(chan error, 1)
-	go func() {
-		if err := a.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+	for _, start := range a.starts {
+		if err := start(ctx); err != nil {
+			_ = ln.Close()
+			a.close()
+			return err
 		}
-	}()
-	a.log.Info("amr-fleet-control listening", "addr", ln.Addr().String(), "fleet", a.svc.Map().FleetID(), "map_version", a.svc.Map().Version())
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
 	}
+	// The loops' context is cancelled by run itself, after the readiness flip, never directly by
+	// the signal.
+	loopCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	defer stop()
+	var loops sync.WaitGroup
+	for _, f := range a.loops {
+		loops.Go(func() { f(loopCtx) })
+	}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- a.server.Serve(ln) }()
+	a.log.Info("amr-fleet-control listening", append([]any{"addr", ln.Addr().String()}, a.banner...)...)
+	var err error
+	select {
+	case <-ctx.Done():
+	case err = <-serveErr:
+	}
+	a.readiness.SetNotReady()
+	stop()
 	drain, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	return a.server.Shutdown(drain)
+	shutdownErr := a.server.Shutdown(drain)
+	loops.Wait()
+	a.close()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return shutdownErr
 }
 
 // purge enforces the 24-hour idempotency window, hourly.

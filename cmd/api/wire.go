@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -53,6 +54,14 @@ type app struct {
 	idem      *postgres.IdempotencyStore
 	readiness *inboundhttp.Readiness
 	server    *http.Server
+	// lesson (plan 04 Task 19 review): run's boot steps in order (connect the link, Recover), the
+	// loops it runs until the shutdown (the link's worker/tick/sender, the relay, the purger) and
+	// what close shuts after every loop returned, in order (link, relay sink, pool).
+	starts    []func(context.Context) error
+	loops     []func(context.Context)
+	closers   []func()
+	closeOnce sync.Once
+	banner    []any // the listening line's fleet and map version
 }
 
 func wire(ctx context.Context, cfg config, log *slog.Logger) (*app, error) {
@@ -85,7 +94,27 @@ func wire(ctx context.Context, cfg config, log *slog.Logger) (*app, error) {
 		inboundhttp.Dependency{Name: "mqtt", Check: a.mqttCheck})
 	idem := inboundhttp.NewIdempotency(a.idem, a.svc, system.Clock{}) // rulings P3-R10, P3-R15: the Service, so its serialized UoW
 	a.server = newHTTPServer(cfg, &inboundhttp.Server{Service: a.svc, Idempotency: idem.Middleware, Readiness: a.readiness}, log)
+	a.sequence()
+	a.banner = []any{"fleet", m.FleetID(), "map_version", m.Version()}
 	return a, nil
+}
+
+// sequence fills run's boot steps, loops and closers (boot order: link connect, Recover, then the
+// link's worker, the relay, the purger and HTTP; shutdown: loops, then link, sink, pool).
+func (a *app) sequence() {
+	a.starts = []func(context.Context) error{func(context.Context) error { return a.connect() }, a.svc.Recover}
+	a.loops = []func(context.Context){a.runLink, func(ctx context.Context) { _ = a.relay.Run(ctx) }, a.purge}
+	a.closers = []func(){func() {
+		if a.down.link != nil {
+			a.down.link.Close()
+		}
+	}, func() { _ = a.sink.Close() }, a.pool.Close}
+}
+
+// runLink runs the fleet link's worker, tick and sender until ctx ends and waits for all three.
+func (a *app) runLink(ctx context.Context) {
+	a.down.link.Start(ctx)
+	a.down.link.Wait()
 }
 
 // newHTTPServer builds the REST server over s; the router's spans and metric series are named
@@ -114,12 +143,12 @@ func (a *app) connect() error {
 	return nil
 }
 
+// close runs the closers once, in order (run calls it after every loop returned; main's defer and a
+// test cleanup calling it again do nothing).
 func (a *app) close() {
-	if a.down.link != nil {
-		a.down.link.Close()
-	}
-	if a.sink != nil {
-		_ = a.sink.Close()
-	}
-	a.pool.Close()
+	a.closeOnce.Do(func() {
+		for _, f := range a.closers {
+			f()
+		}
+	})
 }
