@@ -38,3 +38,15 @@ RETRYABLE (ADR 0004: a map deploy or a robot's first report clears them), so no 
 unknown id final; an unknown fleet on the resource is `mcp.ResourceNotFoundError(uri)`. A boot error is one
 JSON line naming every bad variable (a set-but-unknown `LOG_LEVEL` included), and the listener is bound
 before the migrations and the pool.
+
+Guards (Task 19): the A2A agent mirrors them. The sensor checks both surfaces and both `cmd/` roots (a missing
+directory fails; there is no "not built yet" branch) and `TestA2AAdapterDependencyRule` keeps the adapter additive.
+A skill request is decoded strictly (nothing after the JSON document, keys matched byte for byte); every run is
+one `a2a.skill <id>` span (`gen_ai.operation.name=execute_tool`, `warehouse.authority=L1`, the problem's slug as
+the status), an id the card does not offer is `a2a.skill unknown` with no raw id; a problem carries the REST
+catalogue slug as `code` and no replay class; the reply is one agent message bound to the caller's `contextId`
+and names no task. Both agent roots read through `postgres.NewReadOnlyPool` (plan 04 ruling P4-R17 parity): every
+transaction the adapter begins on it is `BEGIN READ ONLY`, out-of-unit reads included, so a write fails with
+SQLSTATE 25006 even behind PgBouncer transaction pooling, where a `default_transaction_read_only` startup
+parameter may be refused; the sensor refuses `postgres.NewPool` in agent sources, and `cmd/api` keeps it.
+Migrations run on `MIGRATIONS_DATABASE_URL`, the read pool on `DATABASE_URL`.
