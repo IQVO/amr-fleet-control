@@ -28,3 +28,13 @@ equipment state". Writes to amr-fleet-control belong to material-flow-control (r
 warehouse-docs' agent catalogue picks the MCP tools up from `testdata/tool_registry.golden.json` and the A2A
 skills from its card index, which `a2a-cards.py --write` refreshes from LIVE cards: the catalogue rows follow the
 first deploy (Task 25 hands that over). A future L2 tool needs its own ADR.
+
+Guards (Task 18): `internal/architecture/agent_readonly_fitness_test.go` is the read-only sensor of both
+surfaces and their `cmd/` roots (arch-go does not constrain `cmd/`): an allowlist of read identifiers resolved
+by import path, no write-verb method on any value, no raw driver, no Kafka, MQTT, VDA 5050, outbox or event
+import. Every tool call is one `mcp.tool <name>` span (`gen_ai.operation.name=execute_tool`,
+`warehouse.authority=L1`) holding the mapped error only. `fleet-not-found` and `robot-not-found` are
+RETRYABLE (ADR 0004: a map deploy or a robot's first report clears them), so no tool description calls an
+unknown id final; an unknown fleet on the resource is `mcp.ResourceNotFoundError(uri)`. A boot error is one
+JSON line naming every bad variable (a set-but-unknown `LOG_LEVEL` included), and the listener is bound
+before the migrations and the pool.
