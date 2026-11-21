@@ -51,12 +51,13 @@ Status: Accepted (2026-11-20). Resolves the handoff's open question "VDA 5050 ve
 - Order rejection is inferred from the `state` (no reply topic) by a rising count of rejection entries. The emulator
   keeps only the newest 50 errors, so a rejection reported on a full list does not raise the count; such an order
   stays unacknowledged until the resend limit fails it `ORDER_REJECTED` (about 20 s later).
-- Only a `CANCEL_REQUESTED` leg's `cancelOrder` is re-sent. Every other `cancelOrder` (one sent as a mission ends
-  failed, or one for an order no mission owns, `recover-` action ids) is sent once: no open mission records its
-  send time. Until the robot answers it, the robot is never offered an order. If it is lost, the tick forgets it
-  once the robot's latest `state` neither shows a pending order nor lists that action: nothing is left to cancel,
-  and anything sent later reaches the robot after the cancel. A lost cancel of a robot still reporting a pending
-  order is never forgotten; the robot stays unassignable until it answers.
+- A `CANCEL_REQUESTED` leg's `cancelOrder` is re-sent up to `ORDER_RESEND_LIMIT` times. Every other `cancelOrder`
+  (one sent as a mission ends failed, or one for an order no mission owns, `recover-` action ids) has no open
+  mission behind it; the robot records when it was sent. Until the robot answers it, the robot is never offered an
+  order. If it is lost, the tick forgets it once the robot's latest `state` neither shows a pending order nor lists
+  that action: nothing is left to cancel, and anything sent later reaches the robot after the cancel. A lost cancel
+  of a robot still reporting a pending order is re-sent, with the same action id, every `ORDER_RESEND_AFTER` until
+  answered; until then the robot stays unassignable and keeps its whole base.
 - A robot that a cancel stopped mid-edge and that then stands idle is assignable at its `lastNodeId`. The first
   move of its next order leaves the reserved corridor: the emulator drives straight to the order's node 1, not
   back along the edge it holds.
