@@ -29,6 +29,9 @@ type lateHooks struct {
 }
 
 func (l *lateHooks) Do(ctx context.Context, fn func(ctx context.Context) error) error {
+	if _, joined := ctx.Value(lateKey{}).(*lateFrame); joined {
+		return l.inner.Do(ctx, fn) // carry (Task 11 review): hooks run after the OUTERMOST unit
+	}
 	f := &lateFrame{}
 	if err := l.inner.Do(context.WithValue(ctx, lateKey{}, f), fn); err != nil {
 		return err

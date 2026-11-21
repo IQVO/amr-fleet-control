@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/IQVO/amr-fleet-control/internal/application/ports"
@@ -91,9 +90,6 @@ type Service struct {
 	m   *fleetmap.Map
 	cfg Config
 	d   Deps
-	// ruling P3-R10: every unit of work commits and hands its robot commands to the Downlink
-	// under this one in-process mutex (single api replica), so commands enqueue in commit order.
-	commit sync.Mutex
 }
 
 func NewService(m *fleetmap.Map, cfg Config, d Deps) (*Service, error) {
@@ -107,8 +103,15 @@ func NewService(m *fleetmap.Map, cfg Config, d Deps) (*Service, error) {
 		d.Clock == nil || d.IDs == nil || d.Metrics == nil || d.Log == nil {
 		return nil, fmt.Errorf("%w: every dependency is required", ErrInvalidConfig)
 	}
+	// ruling P3-R10 (amended; carry (Task 11 review)): units serialize at the outermost unit of work.
+	d.UoW = serialized(d.UoW)
 	return &Service{m: m, cfg: cfg, d: d}, nil
 }
+
+// UnitOfWork is the service's serialized unit of work (ruling P3-R10): wire this SAME value into
+// every adapter that opens a unit of work around the use cases (Task 14's Idempotency
+// middleware), never the inner one. nil on a read-only service.
+func (s *Service) UnitOfWork() ports.UnitOfWork { return s.d.UoW }
 
 // Map is the loaded map.
 func (s *Service) Map() *fleetmap.Map { return s.m }
