@@ -210,9 +210,13 @@ func (u *unit) hold(r *robot.Robot) {
 	if ms := u.missionOf(key); ms != nil {
 		n, e := held(ms.Route(), ms.Reached(), ms.BaseEnd())
 		nodes, edges = append(nodes, n...), append(edges, e...)
+	} else {
+		// carry (Task 8 review): a robot stopped mid-edge keeps its edge.
+		// carry (Task 9 review): only without an active mission (after a cancel); a robot driving
+		// its mission keeps exactly the unpassed part of its base.
+		n, e := u.underway(r)
+		nodes, edges = append(nodes, n...), append(edges, e...)
 	}
-	n, e := u.underway(r) // carry (Task 8 review): a robot stopped mid-edge keeps its edge
-	nodes, edges = append(nodes, n...), append(edges, e...)
 	u.fm.Retain(key, nodes, edges)
 	if r.Node() == "" {
 		return

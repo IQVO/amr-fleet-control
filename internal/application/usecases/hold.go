@@ -12,6 +12,7 @@ import (
 // position, and that edge's far node (decision D7).
 //
 // carry (Task 8 review): before this, a robot stopped mid-edge by a cancel kept only its lastNodeId.
+// carry (Task 9 review): hold calls it only for a robot without an active mission.
 func (u *unit) underway(r *robot.Robot) (nodes, edges []string) {
 	at, ok := u.s.m.Node(r.Node())
 	rep := r.Report()
