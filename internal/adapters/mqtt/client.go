@@ -17,10 +17,11 @@ const InboxSize = 1024
 // clientOptions: OrderMatters is on, so paho calls the handler one message at a time in
 // arrival order on its own goroutine; the handler must never block (it only enqueues). carry
 // (Task 11 review): the ordered store resumes the publishes in flight at a connection loss in
-// publish order (the default MemoryStore resumes them in map order).
+// publish order (the default MemoryStore resumes them in map order), and auto-reconnect retries
+// at least every 2 s (paho backs off up to 10 min by default).
 func clientOptions(brokerURL, clientID string, onConnect func(pahomqtt.Client)) *pahomqtt.ClientOptions {
 	return pahomqtt.NewClientOptions().AddBroker(brokerURL).SetClientID(clientID).
-		SetAutoReconnect(true).SetConnectRetry(true).SetConnectRetryInterval(2 * time.Second).
+		SetAutoReconnect(true).SetConnectRetry(true).SetConnectRetryInterval(2 * time.Second).SetMaxReconnectInterval(2 * time.Second).
 		SetOrderMatters(true).SetOnConnectHandler(onConnect).SetStore(pahomqtt.NewOrderedMemoryStore())
 }
 

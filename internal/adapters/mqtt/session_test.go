@@ -3,6 +3,7 @@ package mqtt
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 // carry (Task 11 review): a broker outage is visible in the logs: the lost connection at WARN
@@ -15,6 +16,11 @@ func TestTheLinkLogsConnectionLossAndCountsReconnects(t *testing.T) {
 	l.session(o)
 	if !o.CleanSession || o.OnConnectionLost == nil {
 		t.Fatalf("CleanSession = %v, lost handler set = %v", o.CleanSession, o.OnConnectionLost != nil)
+	}
+	// carry (Task 11 review): the WARN says "reconnecting every 2 s"; paho's auto-reconnect backs
+	// off up to MaxReconnectInterval (10 min by default), so it is capped at 2 s.
+	if o.MaxReconnectInterval != 2*time.Second || o.ConnectRetryInterval != 2*time.Second {
+		t.Fatalf("reconnect interval = %v, connect retry interval = %v, want 2s", o.MaxReconnectInterval, o.ConnectRetryInterval)
 	}
 	o.OnConnectionLost(nil, errors.New("read tcp: connection reset by peer"))
 	lost := sink.records("mqtt connection lost")
