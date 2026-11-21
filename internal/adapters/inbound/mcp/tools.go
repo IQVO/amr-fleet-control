@@ -5,6 +5,10 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
 	"github.com/IQVO/amr-fleet-control/internal/domain/robot"
@@ -159,10 +163,25 @@ func fleetPayload(v usecases.FleetView) map[string]any {
 			"legsQueued": c.LegsQueued, "legsActive": c.LegsActive}}
 }
 
+// tracerName is the instrumentation scope of the tool spans ("mcp.tool <name>").
+const tracerName = "github.com/IQVO/amr-fleet-control/internal/adapters/inbound/mcp"
+
+// addTool registers handle under tool. carry (plan 04 Task 20/21 review lessons): every call runs in
+// one "mcp.tool <name>" span carrying gen_ai.operation.name=execute_tool, the tool name and its
+// declared authority (warehouse.authority); a failed call records the MAPPED tool error (mapError: no
+// DSN or SQL reaches a trace) and marks the span Error.
 func addTool[In, Out any](server *mcp.Server, tool *mcp.Tool, handle func(context.Context, In) (Out, error)) {
+	level, _ := tool.Meta[authorityMetaKey].(string)
+	name := tool.Name
 	mcp.AddTool(server, tool, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		ctx, span := otel.Tracer(tracerName).Start(ctx, "mcp.tool "+name, trace.WithAttributes(
+			attribute.String("gen_ai.operation.name", "execute_tool"), attribute.String("gen_ai.tool.name", name),
+			attribute.String("warehouse.authority", level)))
+		defer span.End()
 		out, err := handle(ctx, in)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			var zero Out
 			return nil, zero, err
 		}
