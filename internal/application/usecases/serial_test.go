@@ -85,7 +85,8 @@ func TestCommandsReachTheDownlinkInCommitOrderThroughAnOuterUnitOfWork(t *testin
 }
 
 // carry (Task 11 review): a unit joins only the OPEN frame of its own decorator; a ctx kept from
-// a finished unit (a hook's WithoutCancel ctx) takes the lock again.
+// a finished unit (captured inside its fn; no hook is involved) takes the lock again, and a hook
+// registered in a fresh unit still runs.
 func TestASerialUnitOfWorkJoinsOnlyItsOwnOpenFrame(t *testing.T) {
 	s := usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(memory.NewStore()))
 	var kept context.Context

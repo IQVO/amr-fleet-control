@@ -33,6 +33,10 @@ type IDs interface{ NewID() string }
 // AfterCommit registers fn to run after the OUTERMOST unit of work carried by ctx committed, in
 // registration order; the hooks are dropped when it rolls back or panics. Outside a unit of work
 // fn runs at once. Robot commands are sent only from such a hook.
+//
+// carry (Task 11 review): never open a unit from a ctx of a finished unit or from a goroutine
+// spawned inside one: Do would join a frame that already committed (or is still running on
+// another goroutine), so its writes and hooks escape the unit they belong to.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(ctx context.Context) error) error
 	AfterCommit(ctx context.Context, fn func())
