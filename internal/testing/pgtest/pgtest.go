@@ -126,3 +126,20 @@ func BarePool(t *testing.T) *pgxpool.Pool {
 	t.Cleanup(pool.Close)
 	return pool
 }
+
+// BarePoolSized is BarePool with room for maxConns connections: a test that holds many
+// connections at once (every call waiting on one lock) needs no call to wait for a pool slot.
+func BarePoolSized(t *testing.T, maxConns int32) *pgxpool.Pool {
+	t.Helper()
+	cfg, err := pgxpool.ParseConfig(URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MaxConns = maxConns
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}

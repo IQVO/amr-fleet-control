@@ -19,9 +19,9 @@ func NewIdempotencyStore(pool *pgxpool.Pool) *IdempotencyStore { return &Idempot
 
 func (s *IdempotencyStore) Lookup(ctx context.Context, key string, notBefore time.Time) (idempotency.IdempotencyRecord, bool, error) {
 	rec := idempotency.IdempotencyRecord{Key: key}
-	err := queryFor(ctx, s.pool).QueryRow(ctx, `SELECT fingerprint, status, content_type, body, created_at
-		FROM idempotency_keys WHERE key = $1 AND created_at >= $2`, key, notBefore.UTC()).
-		Scan(&rec.Fingerprint, &rec.Status, &rec.ContentType, &rec.Body, &rec.CreatedAt)
+	err := queryRow(ctx, s.pool, `SELECT fingerprint, status, content_type, body, created_at
+		FROM idempotency_keys WHERE key = $1 AND created_at >= $2`, []any{key, notBefore.UTC()},
+		&rec.Fingerprint, &rec.Status, &rec.ContentType, &rec.Body, &rec.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return idempotency.IdempotencyRecord{}, false, nil
 	}
@@ -38,7 +38,7 @@ func (s *IdempotencyStore) Save(ctx context.Context, rec idempotency.Idempotency
 	if body == nil {
 		body = []byte{}
 	}
-	_, err := queryFor(ctx, s.pool).Exec(ctx, `INSERT INTO idempotency_keys (key, fingerprint, status, content_type, body, created_at)
+	_, err := exec(ctx, s.pool, `INSERT INTO idempotency_keys (key, fingerprint, status, content_type, body, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (key) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, status = EXCLUDED.status,
 			content_type = EXCLUDED.content_type, body = EXCLUDED.body, created_at = EXCLUDED.created_at
@@ -50,7 +50,9 @@ func (s *IdempotencyStore) Save(ctx context.Context, rec idempotency.Idempotency
 	return nil
 }
 
+// Purge drops the answers created before before. carry (Task 12 review): in a transaction of its
+// own (exec), so the SET LOCAL timeouts bound it.
 func (s *IdempotencyStore) Purge(ctx context.Context, before time.Time) (int64, error) {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM idempotency_keys WHERE created_at < $1`, before.UTC())
+	tag, err := exec(ctx, s.pool, `DELETE FROM idempotency_keys WHERE created_at < $1`, before.UTC())
 	return tag.RowsAffected(), err
 }

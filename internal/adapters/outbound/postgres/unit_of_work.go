@@ -84,14 +84,43 @@ func (u *UnitOfWork) AfterCommit(ctx context.Context, fn func()) {
 	fn()
 }
 
-// queryFor returns the transaction of the open unit of work ctx carries, or pool. carry
-// (Task 12 review): a ctx kept from a finished unit still carries its closed transaction, so
-// only a joinable one is used.
-func queryFor(ctx context.Context, pool *pgxpool.Pool) querier {
-	if tx, ok := pgtx.From(ctx); ok && joinable(ctx) {
-		return tx
-	}
-	return pool
+// carry (Task 12 review, Task 16): there is no pool path. A statement outside a unit of work (the
+// idempotency middleware's Lookup and refusal Save, the hourly Purge, the read-only queries) runs
+// in a transaction of its own through inTx, so begin's SET LOCAL timeouts bound it behind
+// PgBouncer (pool_mode=transaction) too, where NewPool's session SET may sit on another server
+// connection. Inside an open unit the unit's transaction is joined, as before.
+
+// exec runs one statement on the open unit's transaction, or in a transaction of its own.
+func exec(ctx context.Context, pool *pgxpool.Pool, sql string, args ...any) (pgconn.CommandTag, error) {
+	var tag pgconn.CommandTag
+	err := inTx(ctx, pool, func(q querier) error {
+		var err error
+		tag, err = q.Exec(ctx, sql, args...)
+		return err
+	})
+	return tag, err
+}
+
+// queryRow runs a single-row query and scans it into dest, like exec.
+func queryRow(ctx context.Context, pool *pgxpool.Pool, sql string, args []any, dest ...any) error {
+	return inTx(ctx, pool, func(q querier) error { return q.QueryRow(ctx, sql, args...).Scan(dest...) })
+}
+
+// query runs a multi-row query like exec and hands every row to each, inside the transaction.
+func query(ctx context.Context, pool *pgxpool.Pool, sql string, each func(pgx.Rows) error) error {
+	return inTx(ctx, pool, func(q querier) error {
+		rows, err := q.Query(ctx, sql)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			if err := each(rows); err != nil {
+				return err
+			}
+		}
+		return rows.Err()
+	})
 }
 
 // inTx runs fn on the open unit's transaction, or on a transaction of its own. carry (Task 12

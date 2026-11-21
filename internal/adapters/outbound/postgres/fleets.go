@@ -28,8 +28,8 @@ func (r *Fleets) Get(ctx context.Context, fleetID string) (fleetrow.Record, bool
 func (r *Fleets) read(ctx context.Context, fleetID, lock string) (fleetrow.Record, bool, error) {
 	var rec fleetrow.Record
 	var res, cpt []byte
-	err := queryFor(ctx, r.pool).QueryRow(ctx,
-		`SELECT map_version, reservations, capacity FROM fleets WHERE fleet_id = $1`+lock, fleetID).Scan(&rec.MapVersion, &res, &cpt)
+	err := queryRow(ctx, r.pool, `SELECT map_version, reservations, capacity FROM fleets WHERE fleet_id = $1`+lock,
+		[]any{fleetID}, &rec.MapVersion, &res, &cpt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fleetrow.Record{}, false, nil
 	}
@@ -59,7 +59,7 @@ func (r *Fleets) Save(ctx context.Context, fleetID string, rec fleetrow.Record) 
 			return err
 		}
 	}
-	_, err = queryFor(ctx, r.pool).Exec(ctx, `INSERT INTO fleets (fleet_id, map_version, reservations, capacity) VALUES ($1, $2, $3, $4)
+	_, err = exec(ctx, r.pool, `INSERT INTO fleets (fleet_id, map_version, reservations, capacity) VALUES ($1, $2, $3, $4)
 		ON CONFLICT (fleet_id) DO UPDATE SET map_version = $2, reservations = $3, capacity = $4, updated_at = now()`,
 		fleetID, rec.MapVersion, res, cpt)
 	return err

@@ -27,9 +27,9 @@ func (r *Missions) Insert(ctx context.Context, m *mission.Mission) error {
 		return err
 	}
 	var seq int64
-	err = queryFor(ctx, r.pool).QueryRow(ctx, `INSERT INTO missions (mission_id, kind, status, open, container_id, map_version, state, accepted_at)
+	err = queryRow(ctx, r.pool, `INSERT INTO missions (mission_id, kind, status, open, container_id, map_version, state, accepted_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING seq`,
-		m.ID(), string(m.Kind()), string(m.Status()), m.Open(), m.ContainerID(), m.MapVersion(), b, m.AcceptedAt()).Scan(&seq)
+		[]any{m.ID(), string(m.Kind()), string(m.Status()), m.Open(), m.ContainerID(), m.MapVersion(), b, m.AcceptedAt()}, &seq)
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && pg.Code == uniqueViolation && pg.ConstraintName == "uq_missions_open_leg_container" {
 		return fmt.Errorf("%w: %s", ports.ErrOpenLegExists, m.ContainerID())
@@ -46,14 +46,14 @@ func (r *Missions) Update(ctx context.Context, m *mission.Mission) error {
 	if err != nil {
 		return err
 	}
-	_, err = queryFor(ctx, r.pool).Exec(ctx, `UPDATE missions SET status = $2, open = $3, state = $4, updated_at = now() WHERE mission_id = $1`,
+	_, err = exec(ctx, r.pool, `UPDATE missions SET status = $2, open = $3, state = $4, updated_at = now() WHERE mission_id = $1`,
 		m.ID(), string(m.Status()), m.Open(), b)
 	return err
 }
 
 func (r *Missions) Get(ctx context.Context, id string) (*mission.Mission, error) {
 	var b []byte
-	err := queryFor(ctx, r.pool).QueryRow(ctx, `SELECT state FROM missions WHERE mission_id = $1`, id).Scan(&b)
+	err := queryRow(ctx, r.pool, `SELECT state FROM missions WHERE mission_id = $1`, []any{id}, &b)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ports.ErrLegNotFound, id)
 	}
@@ -64,24 +64,23 @@ func (r *Missions) Get(ctx context.Context, id string) (*mission.Mission, error)
 }
 
 func (r *Missions) Open(ctx context.Context) ([]*mission.Mission, error) {
-	rows, err := queryFor(ctx, r.pool).Query(ctx, `SELECT state FROM missions WHERE open ORDER BY seq`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var out []*mission.Mission
-	for rows.Next() {
+	err := query(ctx, r.pool, `SELECT state FROM missions WHERE open ORDER BY seq`, func(rows pgx.Rows) error {
 		var b []byte
 		if err := rows.Scan(&b); err != nil {
-			return nil, err
+			return err
 		}
 		m, err := decodeMission(b)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		out = append(out, m)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func decodeMission(b []byte) (*mission.Mission, error) {
