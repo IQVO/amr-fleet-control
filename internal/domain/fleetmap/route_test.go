@@ -78,6 +78,16 @@ func TestEqualLengthRoutesAreChosenDeterministically(t *testing.T) {
 	if !ok || first.Length != 12 {
 		t.Fatalf("P2 -> ST2 = %+v %v", first, ok)
 	}
+	// Three routes are 12 m long (via C-D-ASRS1-IN2, via C-ASRS1-OUT2-G, via ASRS1-IN1-F-G).
+	// Lower ids settle first, so D settles at 6 m before F and reaches ASRS1-IN2 at 8 m; when
+	// ASRS1-IN2 settles first among the 8 m ties it gives H its predecessor, and G's equal-length
+	// offer at 10 m does not replace it (only a strictly shorter one would).
+	if want := []string{"P2", "B", "C", "D", "ASRS1-IN2", "H", "ST2"}; !reflect.DeepEqual(first.Nodes, want) {
+		t.Fatalf("tie-break chose %v, want %v", first.Nodes, want)
+	}
+	if want := []string{"P2-B", "B-C", "C-D", "D-ASRS1-IN2", "ASRS1-IN2-H", "H-ST2"}; !reflect.DeepEqual(first.Edges, want) {
+		t.Fatalf("tie-break edges %v, want %v", first.Edges, want)
+	}
 	for i := 0; i < 20; i++ {
 		again, _ := m.Route("P2", "ST2", nil)
 		if !reflect.DeepEqual(again, first) {

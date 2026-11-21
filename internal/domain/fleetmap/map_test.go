@@ -2,6 +2,7 @@ package fleetmap_test
 
 import (
 	"errors"
+	"math"
 	"reflect"
 	"testing"
 
@@ -119,6 +120,12 @@ func TestNewRefusesInvalidMaps(t *testing.T) {
 		{"edge from unknown node", func(s *fleetmap.Spec) { s.Edges[0].A = "Z" }},
 		{"loop", func(s *fleetmap.Spec) { s.Edges[0].B = "P1" }},
 		{"negative speed", func(s *fleetmap.Spec) { s.Edges[0].MaxSpeed = -1 }},
+		{"NaN x", func(s *fleetmap.Spec) { s.Nodes[0].X = math.NaN() }},
+		{"infinite x", func(s *fleetmap.Spec) { s.Nodes[0].X = math.Inf(1) }},
+		{"NaN y", func(s *fleetmap.Spec) { s.Nodes[0].Y = math.NaN() }},
+		{"infinite y", func(s *fleetmap.Spec) { s.Nodes[0].Y = math.Inf(-1) }},
+		{"NaN speed", func(s *fleetmap.Spec) { s.Edges[0].MaxSpeed = math.NaN() }},
+		{"infinite speed", func(s *fleetmap.Spec) { s.Edges[0].MaxSpeed = math.Inf(1) }},
 		{"second corridor between a pair", func(s *fleetmap.Spec) {
 			s.Edges = append(s.Edges, fleetmap.Edge{ID: "A-P1", A: "A", B: "P1"})
 		}},

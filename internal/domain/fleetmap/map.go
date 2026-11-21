@@ -96,6 +96,9 @@ func (m *Map) addNode(n Node) error {
 	if _, dup := m.nodes[n.ID]; dup {
 		return fmt.Errorf("%w: node %s is declared twice", ErrInvalidMap, n.ID)
 	}
+	if !finite(n.X) || !finite(n.Y) {
+		return fmt.Errorf("%w: node %s has a non-finite position", ErrInvalidMap, n.ID)
+	}
 	switch n.Kind {
 	case Waypoint, Parking, Charger, Port, Station:
 	default:
@@ -132,6 +135,9 @@ func (m *Map) addEdge(e Edge) error {
 	if e.MaxSpeed < 0 {
 		return fmt.Errorf("%w: edge %s has a negative maxSpeed", ErrInvalidMap, e.ID)
 	}
+	if !finite(e.MaxSpeed) {
+		return fmt.Errorf("%w: edge %s has a non-finite maxSpeed", ErrInvalidMap, e.ID)
+	}
 	key := pairKey(e.A, e.B)
 	if prev, dup := m.pairs[key]; dup {
 		return fmt.Errorf("%w: edges %s and %s join the same nodes", ErrInvalidMap, prev, e.ID)
@@ -145,6 +151,8 @@ func (m *Map) addEdge(e Edge) error {
 	m.adj[e.B] = append(m.adj[e.B], link{to: e.A, edge: e.ID, length: length})
 	return nil
 }
+
+func finite(f float64) bool { return !math.IsNaN(f) && !math.IsInf(f, 0) }
 
 func pairKey(a, b string) [2]string {
 	if a > b {
