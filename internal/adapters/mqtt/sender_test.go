@@ -166,3 +166,16 @@ func TestAFullDownlinkRefusesAndAFailedPublishIsLogged(t *testing.T) {
 		t.Fatalf("records = %v", got)
 	}
 }
+
+// carry (Task 11 review): ruling P3-R10 takes the header in the sender, at send time: commands
+// enqueued while the sender is not running have consumed no headerId (deterministic, unlike the
+// concurrency test above, which catches an enqueue-time header only now and then).
+func TestTheHeaderIsTakenAtSendNotAtEnqueue(t *testing.T) {
+	l := quietLink()
+	_ = l.SendOrder(context.Background(), vda.Order{Robot: r1, OrderID: "leg-1"})
+	_ = l.SendOrder(context.Background(), vda.Order{Robot: r1, OrderID: "leg-1", UpdateID: 1})
+	_ = l.SendInstantActions(context.Background(), vda.InstantActions{Robot: r1})
+	if o, ia := l.headers.Next("order", r1, time.Now()), l.headers.Next("instantActions", r1, time.Now()); o.HeaderID != 0 || ia.HeaderID != 0 {
+		t.Fatalf("headerIds consumed at enqueue: next order %d, next instantActions %d (want 0, 0)", o.HeaderID, ia.HeaderID)
+	}
+}
