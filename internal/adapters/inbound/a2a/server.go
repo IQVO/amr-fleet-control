@@ -44,31 +44,32 @@ func Card(cfg Config) *a2a.AgentCard {
 		Capabilities:        a2a.AgentCapabilities{Streaming: false},
 		// Every skill is a literal with a literal Tags list: the scaffold's mcp_authority fitness test reads
 		// the authority tag statically.
+		// carry (P3-R13): each description names its not-found slugs; none calls an unknown id final.
 		Skills: []a2a.AgentSkill{
 			{
 				ID: skillGetFleet, Name: "Read the fleet",
-				Description: "The map version, handoff points, every robot's PackML state, battery and errors, and the capacity counts. Arguments: fleetId (required). Persists nothing.",
+				Description: "The map version, handoff points, every robot's PackML state, battery and errors, and the capacity counts. Arguments: fleetId (required). Answers a fleet-not-found problem for a fleet the map does not name. Persists nothing.",
 				Tags:        []string{"amr-fleet-control", "fleet", "capacity", "read", "authority:L1"},
 				InputModes:  []string{contentTypeJSON},
 				Examples:    []string{`{"skill":"get_fleet","arguments":{"fleetId":"AMR1"}}`},
 			},
 			{
 				ID: skillListOpenLegs, Name: "List the open legs",
-				Description: "The fleet's QUEUED, ASSIGNED, PICKED_UP and CANCEL_REQUESTED legs in acceptance order. Arguments: fleetId (required). Persists nothing.",
+				Description: "The fleet's QUEUED, ASSIGNED, PICKED_UP and CANCEL_REQUESTED legs in acceptance order. Arguments: fleetId (required). Answers a fleet-not-found problem for a fleet the map does not name (never an empty list). Persists nothing.",
 				Tags:        []string{"amr-fleet-control", "leg", "read", "authority:L1"},
 				InputModes:  []string{contentTypeJSON},
 				Examples:    []string{`{"skill":"list_open_legs","arguments":{"fleetId":"AMR1"}}`},
 			},
 			{
 				ID: skillGetLeg, Name: "Read one leg",
-				Description: "One leg: container, from and to handoff points, status, robot, and once failed the reason and the robot's errorType. Arguments: fleetId, legId (required). Answers a not-found problem for an unknown leg.",
+				Description: "One leg: container, from and to handoff points, status, robot, and once failed the reason and the robot's errorType. Arguments: fleetId, legId (required). Answers a fleet-not-found problem for an unknown fleet and a leg-not-found problem for an unknown leg.",
 				Tags:        []string{"amr-fleet-control", "leg", "read", "authority:L1"},
 				InputModes:  []string{contentTypeJSON},
 				Examples:    []string{`{"skill":"get_leg","arguments":{"fleetId":"AMR1","legId":"leg-0f3a91"}}`},
 			},
 			{
 				ID: skillGetRobot, Name: "Read one robot",
-				Description: "One robot: connection, PackML state, battery, charging, availability, node, mission, errors. Arguments: fleetId, manufacturer, serialNumber (required).",
+				Description: "One robot: connection, PackML state, battery, charging, availability, node, mission, errors. Arguments: fleetId, manufacturer, serialNumber (required). Answers a fleet-not-found problem for an unknown fleet and a robot-not-found problem for a robot not seen yet (a robot appears on its first report, so a later read may find it).",
 				Tags:        []string{"amr-fleet-control", "robot", "read", "authority:L1"},
 				InputModes:  []string{contentTypeJSON},
 				Examples:    []string{`{"skill":"get_robot","arguments":{"fleetId":"AMR1","manufacturer":"EMU","serialNumber":"R1"}}`},

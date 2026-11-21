@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
@@ -49,9 +48,6 @@ func answer(ctx context.Context, deps Deps, ec *a2asrv.ExecutorContext) a2a.Even
 	data, summary, p := run(ctx, deps, req)
 	if p != nil {
 		span.SetStatus(codes.Error, p.Detail)
-		if p.Status >= 500 {
-			slog.ErrorContext(ctx, "a2a skill failed", "skill", req.Skill)
-		}
 		return reply(ec, envelope{Skill: req.Skill, Problem: p}, p.summary())
 	}
 	return reply(ec, envelope{Skill: req.Skill, Data: data}, summary)
@@ -74,14 +70,14 @@ func run(ctx context.Context, d Deps, req skillRequest) (map[string]any, string,
 	case skillGetFleet:
 		v, err := d.Reads.Fleet(ctx, a.FleetID)
 		if err != nil {
-			return nil, "", problemFromUseCase(err)
+			return nil, "", problemFromUseCase(ctx, err)
 		}
 		return map[string]any{"fleet": fleetDTO(v)}, fmt.Sprintf("Fleet %s on map %s version %s: %d robots, %d available, %d legs queued.",
 			v.FleetID, v.MapID, v.MapVersion, v.Capacity.RobotsTotal, v.Capacity.RobotsAvailable, v.Capacity.LegsQueued), nil
 	case skillListOpenLegs:
 		ls, err := d.Reads.OpenLegs(ctx, a.FleetID)
 		if err != nil {
-			return nil, "", problemFromUseCase(err)
+			return nil, "", problemFromUseCase(ctx, err)
 		}
 		out := make([]map[string]any, 0, len(ls))
 		for _, l := range ls {
@@ -113,7 +109,7 @@ func getLeg(ctx context.Context, d Deps, a args) (map[string]any, string, *probl
 	}
 	v, err := d.Reads.Leg(ctx, a.FleetID, a.LegID)
 	if err != nil {
-		return nil, "", problemFromUseCase(err)
+		return nil, "", problemFromUseCase(ctx, err)
 	}
 	return map[string]any{"leg": legDTO(v)}, fmt.Sprintf("Leg %s (%s, %s to %s) is %s.", v.LegID, v.ContainerID, v.From, v.To, v.Status), nil
 }
@@ -124,7 +120,7 @@ func getRobot(ctx context.Context, d Deps, a args) (map[string]any, string, *pro
 	}
 	v, err := d.Reads.Robot(ctx, a.FleetID, robot.ID{Manufacturer: a.Manufacturer, SerialNumber: a.SerialNumber})
 	if err != nil {
-		return nil, "", problemFromUseCase(err)
+		return nil, "", problemFromUseCase(ctx, err)
 	}
 	return map[string]any{"robot": robotDTO(v)}, fmt.Sprintf("Robot %s is %s at %.0f%%.", v.ID.Key(), v.State, v.Battery), nil
 }
