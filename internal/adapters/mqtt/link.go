@@ -27,7 +27,8 @@ type Uplink interface {
 	Tick(ctx context.Context) error
 }
 
-// FleetLink is the ONE MQTT client of the fleet: wildcard subscriptions, one inbox, one worker.
+// FleetLink is the ONE MQTT client of the fleet: wildcard subscriptions, one inbox, one worker,
+// and one sender that publishes robot commands in the order they were enqueued.
 type FleetLink struct {
 	up      Uplink
 	inbox   *inbox
@@ -42,6 +43,7 @@ type FleetLink struct {
 	firstOnce  sync.Once
 	retryEvery time.Duration
 	connects   atomic.Int64
+	out        chan command // ruling P3-R10: the one FIFO of robot commands
 }
 
 // NewFleetLink connects and subscribes on every (re)connection; messages that arrive before
@@ -84,7 +86,7 @@ func (l *FleetLink) session(o *pahomqtt.ClientOptions) {
 
 func newFleetLink(up Uplink, log *slog.Logger) *FleetLink {
 	return &FleetLink{up: up, inbox: newInbox(InboxSize, "fleet", log), headers: vda5050.NewHeaders(), now: time.Now, log: log,
-		firstRound: make(chan error, 1), retryEvery: subscribeRetry}
+		firstRound: make(chan error, 1), retryEvery: subscribeRetry, out: make(chan command, DownlinkSize)}
 }
 
 // handler is paho's message handler: it only enqueues.
@@ -103,6 +105,7 @@ func (l *FleetLink) Start(ctx context.Context) {
 	l.start.Do(func() {
 		go l.inbox.drain(ctx)
 		go l.runTicks(ctx)
+		go l.sendAll(ctx) // ruling P3-R10
 	})
 }
 
@@ -154,24 +157,6 @@ func (l *FleetLink) dispatch(ctx context.Context, topic string, payload []byte) 
 	if err != nil {
 		l.log.Error("robot message not applied", "topic", topic, "error", err)
 	}
-}
-
-// SendOrder publishes an order (ports.Downlink).
-func (l *FleetLink) SendOrder(_ context.Context, o vda.Order) error {
-	b, err := vda5050.EncodeOrder(o, l.headers.Next("order", o.Robot, l.now()))
-	if err != nil {
-		return err
-	}
-	return l.pub(vda5050.Topic(o.Robot.Manufacturer, o.Robot.SerialNumber, "order"), b)
-}
-
-// SendInstantActions publishes instant actions (ports.Downlink).
-func (l *FleetLink) SendInstantActions(_ context.Context, a vda.InstantActions) error {
-	b, err := vda5050.EncodeInstantActions(a, l.headers.Next("instantActions", a.Robot, l.now()))
-	if err != nil {
-		return err
-	}
-	return l.pub(vda5050.Topic(a.Robot.Manufacturer, a.Robot.SerialNumber, "instantActions"), b)
 }
 
 // Connected reports the broker connection (readiness).

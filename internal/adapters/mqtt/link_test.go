@@ -71,23 +71,44 @@ func TestTheWorkerHandlesMessagesAndTicksInArrivalOrderAndSkipsGarbage(t *testin
 	}
 }
 
+// ruling P3-R10: the sends are asynchronous now, so this brief test starts the link's sender,
+// guards the recording with a mutex and waits for the three publishes; its assertions are the
+// brief's, unchanged.
 func TestSendPublishesOnTheRobotsTopicWithCountingHeaders(t *testing.T) {
 	l := newFleetLink(&recUplink{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var mu sync.Mutex
 	var topics []string
 	var bodies []map[string]any
 	l.pub = func(topic string, b []byte) error {
 		var m map[string]any
 		_ = json.Unmarshal(b, &m)
+		mu.Lock()
+		defer mu.Unlock()
 		topics, bodies = append(topics, topic), append(bodies, m)
 		return nil
 	}
 	r1 := robot.ID{Manufacturer: "EMU", SerialNumber: "R1"}
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l.Start(ctx)
 	if err := l.SendOrder(ctx, vda.Order{Robot: r1, OrderID: "leg-1"}); err != nil {
 		t.Fatal(err)
 	}
 	_ = l.SendOrder(ctx, vda.Order{Robot: r1, OrderID: "leg-1", UpdateID: 1})
 	_ = l.SendInstantActions(ctx, vda.InstantActions{Robot: r1, Actions: []vda.Action{{Type: "cancelOrder", ID: "x", Blocking: "HARD"}}})
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		mu.Lock()
+		n := len(topics)
+		mu.Unlock()
+		if n == 3 {
+			break
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(topics) != 3 {
+		t.Fatalf("published %d of 3: %v", len(topics), topics)
+	}
 	if topics[0] != "vda5050/v3/EMU/R1/order" || topics[2] != "vda5050/v3/EMU/R1/instantActions" {
 		t.Fatalf("topics = %v", topics)
 	}
