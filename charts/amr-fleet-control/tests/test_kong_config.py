@@ -102,6 +102,19 @@ def main() -> int:
     if not cors:
         failures.append("the enabled render contains no cors KongPlugin")
 
+    # carry (plan 04 Task 23 review lesson a): the plugins carry the platform keys' values, exactly.
+    import yaml  # type: ignore
+    want = yaml.safe_load((CHART / "ci" / "all-components-values.yaml").read_text())["kongPlugins"]
+    for p in cors:
+        if p.get("config", {}).get("origins") != [want["cors"]["origin"]]:
+            failures.append(f"cors origins are {p.get('config', {}).get('origins')}, want [{want['cors']['origin']!r}] (kongPlugins.cors.origin)")
+    otel = [p for p in plugins.values() if p.get("plugin") == "opentelemetry"]
+    for p in otel:
+        got = p.get("config", {}).get("traces_endpoint")
+        if got != want["opentelemetry"]["tracesEndpoint"]:
+            failures.append(f"opentelemetry traces_endpoint is {got!r}, want kongPlugins.opentelemetry.tracesEndpoint {want['opentelemetry']['tracesEndpoint']!r}")
+    if not otel:
+        failures.append("the enabled render contains no opentelemetry KongPlugin")
     for r in routes:
         if r["metadata"]["name"].endswith("-a2a"):
             targets = [f["urlRewrite"]["path"].get("replacePrefixMatch")

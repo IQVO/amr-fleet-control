@@ -15,14 +15,9 @@ metadata:
     konghq.com/plugins: {{ . | quote }}
   {{- end }}
 spec:
+  # carry (plan 04 Task 23 review lesson a): mcp.route.parentRefs (warehouse-infra's _platform.yaml), else gatewayApi.parentRefs.
   parentRefs:
-    {{- range .Values.mcp.route.parentRefs }}
-    - name: {{ .name }}
-      namespace: {{ .namespace }}
-      {{- if .sectionName }}
-      sectionName: {{ .sectionName }}
-      {{- end }}
-    {{- end }}
+    {{- include "amr-fleet-control.parentRefs" (.Values.mcp.route.parentRefs | default .Values.gatewayApi.parentRefs) | trim | nindent 4 }}
   rules:
     - matches:
         - path:

@@ -140,6 +140,7 @@ mcp:
   route:
     enabled: false
     path: "/api/mcp/amr-fleet-control"
+    # Empty = gatewayApi.parentRefs. warehouse-infra's _platform.yaml supplies the shared Gateway here.
     parentRefs: []
   extraEnv: []
   # Read-only agents idle at a few millicores and under 16Mi (asrs-control: 20m / 32Mi; material-flow-control: 25m / 32Mi).
@@ -160,6 +161,7 @@ a2a:
   route:
     enabled: false
     path: "/api/a2a/amr-fleet-control"
+    # Empty = gatewayApi.parentRefs. warehouse-infra's _platform.yaml supplies the shared Gateway here.
     parentRefs: []
   extraEnv: []
   # Read-only agents idle at a few millicores and under 16Mi (asrs-control: 20m / 32Mi; material-flow-control: 25m / 32Mi).
@@ -168,16 +170,21 @@ a2a:
     requests: {cpu: 25m, memory: 32Mi}
 
 # Kong plugins owned by this chart (fleet decision 2026-10-13), attached to every enabled HTTPRoute.
-# All default off; warehouse-infra switches them on. NO auth plugin, ever (fleet rule).
+# All default off; warehouse-infra switches them on and its _platform.yaml supplies cors.origin and
+# opentelemetry.tracesEndpoint (the keys every sibling chart reads). The chart refuses an enabled cors without an
+# origin (or with "*") and an enabled opentelemetry without a traces endpoint. NO auth plugin, ever (fleet rule).
 kongPlugins:
   cors:
     enabled: false
-    origin: "http://localhost"
+    # The exact web origin, never "*".
+    origin: ""
+    # Further exact origins, granted after origin.
+    origins: []
   prometheus:
     enabled: false
   opentelemetry:
     enabled: false
-    tracesEndpoint: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
+    tracesEndpoint: ""
 
 nodeSelector: {}
 tolerations: []

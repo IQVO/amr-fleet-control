@@ -28,3 +28,9 @@ a2a:
       - name: warehouse-gateway
         namespace: kong
         sectionName: http
+# The platform keys warehouse-infra's _platform.yaml supplies (test_kong_config.py asserts the plugins carry them).
+kongPlugins:
+  cors:
+    origin: "https://console.example.invalid"
+  opentelemetry:
+    tracesEndpoint: "http://otel.example.invalid:4318/v1/traces"

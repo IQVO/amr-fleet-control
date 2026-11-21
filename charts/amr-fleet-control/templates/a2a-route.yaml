@@ -15,14 +15,9 @@ metadata:
     konghq.com/plugins: {{ . | quote }}
   {{- end }}
 spec:
+  # carry (plan 04 Task 23 review lesson a): a2a.route.parentRefs (warehouse-infra's _platform.yaml), else gatewayApi.parentRefs.
   parentRefs:
-    {{- range .Values.a2a.route.parentRefs }}
-    - name: {{ .name }}
-      namespace: {{ .namespace }}
-      {{- if .sectionName }}
-      sectionName: {{ .sectionName }}
-      {{- end }}
-    {{- end }}
+    {{- include "amr-fleet-control.parentRefs" (.Values.a2a.route.parentRefs | default .Values.gatewayApi.parentRefs) | trim | nindent 4 }}
   rules:
     - matches:
         - path:

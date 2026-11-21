@@ -111,9 +111,45 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if lt (int .Values.terminationGracePeriodSeconds) 30 }}
 {{- fail "terminationGracePeriodSeconds must be at least 30 (10 s HTTP drain overlapping the loops' stop, a relay pass and the MQTT disconnect: about 20 s, plus a margin)" }}
 {{- end }}
+{{- /* carry (plan 04 Task 23 review lesson a): an enabled plugin needs its platform value, or Kong runs it misconfigured. */ -}}
+{{- if .Values.kongPlugins.cors.enabled }}
+{{- $origins := include "amr-fleet-control.corsOrigins" . | fromJsonArray }}
+{{- if not $origins }}
+{{- fail "kongPlugins.cors.enabled needs kongPlugins.cors.origin (the exact web origin; warehouse-infra's _platform.yaml supplies it) or kongPlugins.cors.origins" }}
+{{- end }}
+{{- if has "*" $origins }}
+{{- fail "kongPlugins.cors: origin \"*\" is refused (the endpoints are unauthenticated): name the exact web origin" }}
+{{- end }}
+{{- end }}
+{{- if and .Values.kongPlugins.opentelemetry.enabled (not .Values.kongPlugins.opentelemetry.tracesEndpoint) }}
+{{- fail "kongPlugins.opentelemetry.enabled needs kongPlugins.opentelemetry.tracesEndpoint (warehouse-infra's _platform.yaml supplies it)" }}
+{{- end }}
 {{- range .Values.extraEnv }}
 {{- if or (hasSuffix "_MODE" .name) (eq .name "OTEL_EXPORTER_OTLP_ENDPOINT") (eq .name "OTEL_SERVICE_NAME") (eq .name "DATABASE_URL") }}
 {{- fail (printf "extraEnv must not set %s: the chart renders it (or it does not exist)" .name) }}
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/* carry (plan 04 Task 23 review lesson a): the CORS origins as a JSON list: kongPlugins.cors.origin (the platform's
+string key) first, then any kongPlugins.cors.origins entries, without duplicates. */}}
+{{- define "amr-fleet-control.corsOrigins" -}}
+{{- $cors := .Values.kongPlugins.cors -}}
+{{- $origins := list -}}
+{{- with $cors.origin }}{{- $origins = append $origins . -}}{{- end -}}
+{{- range $cors.origins }}{{- $origins = append $origins . -}}{{- end -}}
+{{- $origins | uniq | toJson -}}
+{{- end -}}
+
+{{/* carry (plan 04 Task 23 review lesson a): a route's parentRefs (the list passed in), rendered under spec.parentRefs. */}}
+{{- define "amr-fleet-control.parentRefs" -}}
+{{- range . }}
+- name: {{ .name }}
+  {{- if .namespace }}
+  namespace: {{ .namespace }}
+  {{- end }}
+  {{- if .sectionName }}
+  sectionName: {{ .sectionName }}
+  {{- end }}
+{{- end }}
+{{- end -}}

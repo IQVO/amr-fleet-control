@@ -46,7 +46,9 @@ metadata:
 plugin: cors
 config:
   origins:
-    - {{ $cfg.origin | quote }}
+    {{- range (include "amr-fleet-control.corsOrigins" $ | fromJsonArray) }}
+    - {{ . | quote }}
+    {{- end }}
   methods:
     - GET
     - POST
