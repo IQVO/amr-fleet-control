@@ -1,7 +1,6 @@
 package a2a
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -65,12 +64,8 @@ func run(ctx context.Context, d Deps, req skillRequest) (map[string]any, string,
 		return nil, "", problemUnknownSkill(req.Skill)
 	}
 	var a args
-	if len(req.Arguments) > 0 {
-		dec := json.NewDecoder(bytes.NewReader(req.Arguments))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&a); err != nil {
-			return nil, "", problemInvalidArgument(fmt.Sprintf("arguments: %v", err))
-		}
+	if err := decodeStrict(req.Arguments, &a); err != nil { // carry (plan 04 Task 21 lesson): EOF + exact keys
+		return nil, "", problemInvalidArgument(fmt.Sprintf("arguments: %v", err))
 	}
 	if a.FleetID == "" {
 		return nil, "", problemInvalidArgument("fleetId is required")
@@ -148,9 +143,7 @@ func parse(ec *a2asrv.ExecutorContext) (skillRequest, *problem) {
 		return skillRequest{}, problemMalformed("the first part is neither data nor text")
 	}
 	var req skillRequest
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	if err := decodeStrict(raw, &req); err != nil { // carry (plan 04 Task 21 lesson): EOF + exact keys
 		return skillRequest{}, problemMalformed(fmt.Sprintf("the skill request is not valid: %v", err))
 	}
 	if req.Skill == "" {
