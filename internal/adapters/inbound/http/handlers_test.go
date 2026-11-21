@@ -32,6 +32,9 @@ type api struct {
 	down *memory.Downlink
 }
 
+// discardLogger keeps the request log out of the test output (Task 15 review).
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
 func newAPI(t *testing.T, robots ...string) *api {
 	t.Helper()
 	m, err := config.LoadMap("../../../../config/map.example.yaml")
@@ -54,7 +57,7 @@ func newAPI(t *testing.T, robots ...string) *api {
 		_ = svc.HandleState(context.Background(), vda.State{Robot: id, Report: robot.Report{At: t0, LastNodeID: node, X: n.X, Y: n.Y, MapID: m.MapID(), Battery: 90}})
 	}
 	idem := ahttp.NewIdempotency(memory.NewIdempotency(s), svc, clock) // rulings P3-R10, P3-R15: the Service, so its serialized UoW
-	return &api{t: t, svc: svc, down: down, h: ahttp.NewRouter(&ahttp.Server{Service: svc, Idempotency: idem.Middleware}, nil)}
+	return &api{t: t, svc: svc, down: down, h: ahttp.NewRouter(&ahttp.Server{Service: svc, Idempotency: idem.Middleware}, discardLogger)}
 }
 
 func (a *api) do(method, path, body, key string) *httptest.ResponseRecorder {
@@ -264,7 +267,7 @@ func checkRobotView(t *testing.T, a *api) {
 }
 
 func TestAPanicIsA500Problem(t *testing.T) {
-	h := ahttp.NewRouter(&ahttp.Server{Service: nil}, nil)
+	h := ahttp.NewRouter(&ahttp.Server{Service: nil}, discardLogger)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/fleets/AMR1", nil))
 	if rec.Code != http.StatusInternalServerError || decode(t, rec)["code"] != "internal-error" {
