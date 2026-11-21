@@ -11,9 +11,11 @@ info:
     name: UNLICENSED
   description: |
     Event contract of the **amr-fleet-control** bounded context (WCS tier, Generic, segment `wes`; ADR 0001, ADR 0003).
-    Seven facts: four for material-flow-control's subsystem-controller interface (WCS context map relationship 4),
-    `RobotStateChanged` and `FleetCapacityChanged` for material-flow-control's capacity view, and `DeadlockDetected`
-    plus `LegFailed` with reason `ROBOT_BLOCKED` for exception-management.
+    Seven facts. material-flow-control (WCS plan 04) consumes five: `LegAssigned`, `ContainerPickedUp`, `LegCompleted`
+    and `LegFailed` for its subsystem-controller interface (WCS context map relationship 4), and `FleetCapacityChanged`
+    for its capacity view. `RobotStateChanged` and `DeadlockDetected` have no consumer yet: material-flow-control skips
+    `RobotStateChanged`, and `DeadlockDetected` (like `LegFailed` with reason `ROBOT_BLOCKED`) is designed for
+    exception-management (WCS plan 05).
 
     **Published** through a transactional outbox to `warehouse.amr-fleet-control.events`, and the same occurrence
     (same CloudEvents `id`, `type` and `data`) to `warehouse.amr-fleet-control.analytics` with the `analytics`
@@ -58,7 +60,8 @@ channels:
     subscribe:
       operationId: receiveAmrFleetControlEvents
       summary: Receive amr-fleet-control's facts.
-      description: Route on the full `type`. material-flow-control consumes every type except DeadlockDetected (plan 04).
+      # ruling P3-R12: the consumers stated here, in info.description and in RobotStateChanged's x-no-consumer-reason match ADR 0003's Published types table.
+      description: Route on the full `type`. material-flow-control (plan 04) consumes LegAssigned, ContainerPickedUp, LegCompleted, LegFailed and FleetCapacityChanged; RobotStateChanged and DeadlockDetected have no consumer yet.
       tags:
         - name: amr-fleet-control
       message:
@@ -200,7 +203,7 @@ components:
             dataschema: urn:warehouse:amr-fleet-control:events:LegFailed:v1
             data: {leg_id: leg-8b21, fleet_id: AMR1, container_id: C-0002, from_handoff_point_id: ST1, to_handoff_point_id: ASRS1-IN1, robot: {manufacturer: EMU, serial_number: R2}, reason: PICK_FAILED, robot_error: LOAD_NOT_AVAILABLE, container_on_robot: false, failed_at: '2026-11-20T08:03:00Z'}
     RobotStateChanged:
-      x-no-consumer-reason: "pending: material-flow-control (WCS plan 04) is the intended consumer; its asyncapi declares this type when it is built, and this reason is deleted in that wave"
+      x-no-consumer-reason: "none yet: material-flow-control (WCS plan 04) skips this type and reads fleet capacity from FleetCapacityChanged; this reason is deleted when a consumer declares this type"
       name: RobotStateChanged
       title: Robot state changed
       summary: A robot's PackML state or connection changed (never a battery tick).
