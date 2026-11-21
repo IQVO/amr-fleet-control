@@ -97,7 +97,8 @@ func (u *unit) resends() error {
 			continue
 		}
 		if ms.Resends() >= u.s.cfg.ResendLimit {
-			if err := u.fail(ms, mission.ReasonOrderRejected, "", true); err != nil {
+			// carry (Task 8 review): robot_error is the robot's newest rejection, if it lists one (D16).
+			if err := u.fail(ms, mission.ReasonOrderRejected, lastError(r.Report(), true), true); err != nil {
 				return err
 			}
 			continue

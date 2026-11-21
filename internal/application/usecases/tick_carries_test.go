@@ -129,3 +129,21 @@ func TestAnUnansweredCancelOfAPendingOrderHandsTheRobotToARecoverCancel(t *testi
 		t.Fatalf("robot = %+v", r.Snapshot())
 	}
 }
+
+// carry (Task 8 review): the resend limit's ORDER_REJECTED carries the robot's newest rejection
+// as robot_error (D16), here one listed before the order (so the count never rose).
+func TestTheResendLimitReportsTheRobotsRejection(t *testing.T) {
+	h := newHarness(t, floor(t), nil)
+	h.online("R1", "P1", 90)
+	h.report("R1", func(r *robot.Report) {
+		r.Errors = []robot.Error{{Type: robot.ErrTypeInvalidOrder, Level: robot.LevelWarning}, {Type: "LOAD_NOT_AVAILABLE", Level: robot.LevelWarning}}
+	})
+	v := h.leg("C1", "ST1", "ASRS1-IN1")
+	for range 4 {
+		h.tick(5 * time.Second)
+	}
+	lf := ofType[mission.LegFailed](h.events.All())
+	if len(lf) != 1 || lf[0].LegID != v.LegID || lf[0].Reason != mission.ReasonOrderRejected || lf[0].RobotError != "INVALID_ORDER" {
+		t.Fatalf("LegFailed = %+v", lf)
+	}
+}
