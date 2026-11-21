@@ -145,3 +145,37 @@ func TestNewFleetLinkFailsAndDisconnectsOnAFailedOrMissingFirstRound(t *testing.
 		t.Fatalf("clean round: err = %v, disconnects = %d", err, c.n)
 	}
 }
+
+// carry (Task 11 review): a reconnect during a retry sleep starts a new round, and the old
+// round's retry loop stops instead of retrying next to the new one.
+func TestARetryLoopStopsOnceANewRoundStarted(t *testing.T) {
+	l := quietLink()
+	l.retryEvery = time.Millisecond
+	l.connected(func(string) error { return nil }, func() bool { return true })
+	if err := awaitFirstRound(l.firstRound, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	attempts := 0
+	failing := func(string) error {
+		mu.Lock()
+		defer mu.Unlock()
+		attempts++
+		if attempts == 5 { // the round's 3 filters, then 2 retries
+			l.connects.Add(1) // the connection came back: a new round took over
+		}
+		return errors.New("subscribe refused")
+	}
+	done := make(chan struct{})
+	go func() {
+		l.connected(failing, func() bool { return true })
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		mu.Lock()
+		defer mu.Unlock()
+		t.Fatalf("the old round kept retrying after a new round started (%d attempts)", attempts)
+	}
+}

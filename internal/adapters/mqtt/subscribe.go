@@ -72,14 +72,17 @@ func (l *FleetLink) connected(sub func(filter string) error, open func() bool) {
 		return
 	}
 	l.log.Warn("mqtt subscribe failed; retrying while connected", "every", l.retryEvery, "error", err)
-	l.retry(failed, sub, open)
+	l.retry(n, failed, sub, open)
 }
 
-// retry re-subscribes the failed filters until they all succeed or the connection closes.
-func (l *FleetLink) retry(failed []string, sub func(filter string) error, open func() bool) {
-	for len(failed) > 0 && open() {
+// retry re-subscribes the failed filters until they all succeed, the connection closes, or a
+// reconnect started a newer round. carry (Task 11 review): round is the connects stamp, so a
+// reconnect during a retry sleep never leaves two loops retrying side by side.
+func (l *FleetLink) retry(round int64, failed []string, sub func(filter string) error, open func() bool) {
+	current := func() bool { return open() && l.connects.Load() == round }
+	for len(failed) > 0 && current() {
 		time.Sleep(l.retryEvery)
-		if !open() {
+		if !current() {
 			return
 		}
 		var still []string
