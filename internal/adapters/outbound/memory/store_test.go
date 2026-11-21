@@ -145,3 +145,17 @@ func TestADoFromAFinishedUnitsCtxOpensItsOwnUnit(t *testing.T) {
 		t.Fatal("AfterCommit on a finished frame must run at once")
 	}
 }
+
+// carry (Task 12 review): an AfterCommit registered from inside a running hook joins the
+// hooks phase of the same unit and runs exactly once (Postgres runs it at once).
+func TestAnAfterCommitRegisteredInsideAHookRunsExactlyOnce(t *testing.T) {
+	uow := memory.NewUnitOfWork(memory.NewStore())
+	nested := 0
+	err := uow.Do(context.Background(), func(c context.Context) error {
+		uow.AfterCommit(c, func() { uow.AfterCommit(c, func() { nested++ }) })
+		return nil
+	})
+	if err != nil || nested != 1 {
+		t.Fatalf("err = %v, nested hook ran %d times, want 1", err, nested)
+	}
+}

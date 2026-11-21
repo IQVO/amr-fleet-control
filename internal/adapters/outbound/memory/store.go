@@ -113,8 +113,10 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error)
 		u.s.with(func(t *tables) { *t = before })
 		return err
 	}
-	for _, h := range f.hooks {
-		h()
+	// carry (Task 12 review): by index, so a hook an AfterCommit registers from inside a
+	// running hook (the frame is still open) runs too, exactly once.
+	for i := 0; i < len(f.hooks); i++ {
+		f.hooks[i]()
 	}
 	return nil
 }
