@@ -16,14 +16,14 @@ package architecture
 //     robot-side adapter (Kafka, CloudEvents, outbox, events, MQTT, VDA 5050, paho, the memory doubles),
 //     no sibling inbound adapter and no outbound A2A client is imported. Allowlist, not denylist: a new
 //     write use case is refused without having to be named here first.
-//   - The A2A surface is Task 19's: until it lands, a surface whose adapter AND cmd/ directories are
-//     both absent is logged (never skipped silently); one without the other fails. The MCP surface is
-//     built, so a missing directory fails instead of passing vacuously.
+//   - Both surfaces are built (cmd/mcp Task 18, cmd/a2a Task 19): a missing adapter or cmd/ directory
+//     fails instead of passing vacuously (carry, Task 18 review: no "not built yet" branch).
 //   - TestAgentReadOnlySensorBites proves each rule fires on code fixtures.
 //   - agent_readonly_methods_fitness_test.go: no write METHOD is selected on any value, and no raw
 //     driver (pgx, database/sql) is imported.
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -40,15 +40,14 @@ type agentSurface struct {
 	name, adapterDir, cmdDir string
 	reads                    []string // the exact method set of the adapter's Reads seam, sorted
 	forbidSibling            string   // the other agent adapter, never imported
-	builtBy                  string   // "" when built; else the task that builds it (both dirs absent until then)
 }
 
 // agentReads is the read method set of both Reads seams (*usecases.Service built by NewReader implements it).
 var agentReads = []string{"Fleet", "Leg", "OpenLegs", "Robot"}
 
 var agentSurfaces = []agentSurface{
-	{"mcp", "../adapters/inbound/mcp", "../../cmd/mcp", agentReads, "/internal/adapters/inbound/a2a", ""},
-	{"a2a", "../adapters/inbound/a2a", "../../cmd/a2a", agentReads, "/internal/adapters/inbound/mcp", "Task 19"},
+	{"mcp", "../adapters/inbound/mcp", "../../cmd/mcp", agentReads, "/internal/adapters/inbound/a2a"},
+	{"a2a", "../adapters/inbound/a2a", "../../cmd/a2a", agentReads, "/internal/adapters/inbound/mcp"},
 }
 
 // agentAllowedSelectors maps a guarded package to the identifiers agent sources may reference through it.
@@ -206,18 +205,21 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// agentSurfaceDirs is the directories of s to check: both, or none (logged) while a surface a later
-// task builds has neither; one without the other, or a built surface with a missing directory, fails.
+// agentSurfaceProblem is why s cannot be checked: a missing adapter or cmd/ directory. carry (Task 18 review):
+// both surfaces are built since Task 19, so a missing directory is a failure, never a vacuous or logged pass.
+func agentSurfaceProblem(s agentSurface) string {
+	adapter, cmd := dirExists(s.adapterDir), dirExists(s.cmdDir)
+	if !adapter || !cmd {
+		return fmt.Sprintf("the %s surface needs both %s (exists=%v) and %s (exists=%v)", s.name, s.adapterDir, adapter, s.cmdDir, cmd)
+	}
+	return ""
+}
+
+// agentSurfaceDirs is the directories of s to check; a surface with a missing directory fails the sensor.
 func agentSurfaceDirs(t *testing.T, s agentSurface) []string {
 	t.Helper()
-	adapter, cmd := dirExists(s.adapterDir), dirExists(s.cmdDir)
-	if s.builtBy != "" && !adapter && !cmd {
-		t.Logf("the %s surface is not built yet (%s and %s are absent; %s builds both): nothing to check",
-			s.name, s.adapterDir, s.cmdDir, s.builtBy)
-		return nil
-	}
-	if !adapter || !cmd {
-		t.Fatalf("the %s surface needs both %s (exists=%v) and %s (exists=%v)", s.name, s.adapterDir, adapter, s.cmdDir, cmd)
+	if p := agentSurfaceProblem(s); p != "" {
+		t.Fatal(p)
 	}
 	return []string{s.adapterDir, s.cmdDir}
 }
