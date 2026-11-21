@@ -27,8 +27,18 @@ sub-resource (200 or 202, 409 when the state forbids it) and every POST idempote
    never leaves a deterministic-key retry pinned to the old refusal; robot-not-found is RETRYABLE too (robot facts
    create robots). leg-not-found stays FINAL (legs are minted here and never deleted). No refusal commits writes, so
    no OUTCOME class exists.
-3. The Idempotency-Key middleware is asrs-control's (key row in the request's unit of work, 24-hour window, age
-   check on replay, hourly purge).
+3. The Idempotency-Key middleware follows asrs-control's (key row in the request's unit of work, 24-hour window,
+   age check on replay, hourly purge), with three differences:
+   - its unit of work is the OUTERMOST serialized unit of a POST: the Service's SerialUnitOfWork, so the order is
+     always serial lock -> transaction -> fleet row and the after-commit robot commands go out inside the lock (in
+     commit order on the wire). `NewIdempotency` takes the Service, never a unit of work, and panics at boot when
+     what the Service hands out lacks the `Serialized` marker: a raw unit of work or a second serial decorator (its
+     own mutex, never joined by the Service's) would bring back the ABBA deadlock against the link worker's Tick;
+   - it re-reads the key under the serial lock before running the handler: a concurrent duplicate that passed the
+     first lookup while the original held the lock replays the original's committed answer (another body: 409
+     idempotency-key-reused) instead of re-running the use case into a RETRYABLE refusal (container-busy, leg-ended);
+   - the replay classes of decision 2 (ruling P3-R13): a refusal the map file or the robot registry decides is
+     RETRYABLE, so its key is released and a retry is evaluated again.
 
 ## Consequences
 
