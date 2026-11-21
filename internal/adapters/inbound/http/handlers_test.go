@@ -142,6 +142,28 @@ func TestARetryableRefusalReleasesItsKey(t *testing.T) {
 	}
 }
 
+// ruling P3-R13: a refusal decided by the map file (unknown-handoff-point, fleet-not-found) can
+// change inside the 24 h window without the client changing its request (a map fix deploy), so it
+// is RETRYABLE: never stored under its key, a retry under the same key is evaluated again.
+func TestAMapDependentRefusalReleasesItsKey(t *testing.T) {
+	a := newAPI(t, "R1")
+	unknown := strings.Replace(legBody, "ST1", "NOPE", 1)
+	rec := a.do("POST", "/fleets/AMR1/legs", unknown, "K")
+	if rec.Code != http.StatusUnprocessableEntity || decode(t, rec)["code"] != "unknown-handoff-point" {
+		t.Fatalf("unknown handoff = %d %s", rec.Code, rec.Body)
+	}
+	if again := a.do("POST", "/fleets/AMR1/legs", unknown, "K"); again.Header().Get("Idempotency-Replayed") == "true" {
+		t.Fatalf("an unknown-handoff-point refusal was replayed under its key: %d %s", again.Code, again.Body)
+	}
+	if fixed := a.do("POST", "/fleets/AMR1/legs", legBody, "K"); fixed.Code != http.StatusAccepted {
+		t.Fatalf("a retry under K after unknown-handoff-point = %d %s, want a fresh 202", fixed.Code, fixed.Body)
+	}
+	_ = a.do("POST", "/fleets/AMR9/legs", legBody, "F")
+	if again := a.do("POST", "/fleets/AMR9/legs", legBody, "F"); again.Code != http.StatusNotFound || again.Header().Get("Idempotency-Replayed") == "true" {
+		t.Fatalf("fleet-not-found retried under its key = %d replayed=%q %s", again.Code, again.Header().Get("Idempotency-Replayed"), again.Body)
+	}
+}
+
 func TestValidationAndNotFoundProblems(t *testing.T) {
 	a := newAPI(t, "R1")
 	cases := []struct {

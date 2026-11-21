@@ -47,10 +47,14 @@ var problemCatalogue = []struct {
 	{errMalformedRequest, problem{http.StatusBadRequest, "bad-request", "Malformed request", classFinal}},
 	{errInvalidParameter, invalidParameter},
 	{usecases.ErrInvalidRequest, invalidParameter},
-	{usecases.ErrFleetNotFound, problem{http.StatusNotFound, "fleet-not-found", "Fleet not found", classFinal}},
+	// ruling P3-R13: a refusal decided by configuration that can change inside the 24 h replay
+	// window without the client changing its request (the map file: fleet-not-found,
+	// unknown-handoff-point, handoff-unreachable) or by state other facts create (robots:
+	// robot-not-found) is RETRYABLE. leg-not-found stays FINAL: legs are minted here, never deleted.
+	{usecases.ErrFleetNotFound, problem{http.StatusNotFound, "fleet-not-found", "Fleet not found", classRetryable}},
 	{usecases.ErrLegNotFound, problem{http.StatusNotFound, "leg-not-found", "Leg not found", classFinal}},
-	{usecases.ErrRobotNotFound, problem{http.StatusNotFound, "robot-not-found", "Robot not found", classFinal}},
-	{usecases.ErrUnknownHandoff, problem{http.StatusUnprocessableEntity, "unknown-handoff-point", "The handoff point is not on this fleet's map", classFinal}},
+	{usecases.ErrRobotNotFound, problem{http.StatusNotFound, "robot-not-found", "Robot not found", classRetryable}},
+	{usecases.ErrUnknownHandoff, problem{http.StatusUnprocessableEntity, "unknown-handoff-point", "The handoff point is not on this fleet's map", classRetryable}},
 	{usecases.ErrHandoffUnreachable, problem{http.StatusUnprocessableEntity, "handoff-unreachable", "No route joins the two handoff points on the current map", classRetryable}},
 	{usecases.ErrContainerBusy, problem{http.StatusUnprocessableEntity, "container-busy", "An open leg already moves the container", classRetryable}},
 	{usecases.ErrFleetUnavailable, problem{http.StatusUnprocessableEntity, "fleet-unavailable", "No robot of the fleet is online", classRetryable}},

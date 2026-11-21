@@ -19,9 +19,10 @@ info:
     **Idempotency.** Every POST requires `Idempotency-Key` (1-128 characters). The first request executes; a retry
     with the same key and body returns the stored answer with `Idempotency-Replayed: true`; the same key with another
     body is `409 idempotency-key-reused`. Only 2xx and FINAL refusals are stored (24 hours): `bad-request`,
-    `invalid-parameter`, `fleet-not-found`, `leg-not-found`, `unknown-handoff-point`. RETRYABLE refusals release the
-    key, so a retry under the same key executes again: `handoff-unreachable`, `container-busy`, `fleet-unavailable`,
-    `leg-not-cancellable`, `leg-ended`.
+    `invalid-parameter`, `leg-not-found`. RETRYABLE refusals release the key, so a retry under the same key executes
+    again: `fleet-not-found`, `robot-not-found`, `unknown-handoff-point`, `handoff-unreachable` (the map file and the
+    robot registry can change inside the window), `container-busy`, `fleet-unavailable`, `leg-not-cancellable`,
+    `leg-ended`.
 
     **Errors** are RFC 9457 `application/problem+json` with a stable `code`. No authentication (fleet rule).
 
@@ -64,7 +65,7 @@ paths:
       responses:
         '200': {description: The fleet., content: {application/json: {schema: {$ref: '#/components/schemas/Fleet'}}}}
         '400': {$ref: '#/components/responses/Problem'}
-        '404': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /fleets/{fleetId}/legs:
     post:
       operationId: requestLeg
@@ -84,9 +85,9 @@ paths:
             Idempotency-Replayed: {$ref: '#/components/headers/IdempotencyReplayed'}
           content: {application/json: {schema: {$ref: '#/components/schemas/Leg'}}}
         '400': {$ref: '#/components/responses/Problem'}
-        '404': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Problem'}
-        '422': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/LegRefused'}
   /fleets/{fleetId}/legs/{legId}:
     get:
       operationId: getLeg
@@ -97,7 +98,7 @@ paths:
       responses:
         '200': {description: The leg., content: {application/json: {schema: {$ref: '#/components/schemas/Leg'}}}}
         '400': {$ref: '#/components/responses/Problem'}
-        '404': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /fleets/{fleetId}/legs/{legId}/cancellation:
     post:
       operationId: cancelLeg
@@ -116,7 +117,7 @@ paths:
           headers: {Idempotency-Replayed: {$ref: '#/components/headers/IdempotencyReplayed'}}
           content: {application/json: {schema: {$ref: '#/components/schemas/Leg'}}}
         '400': {$ref: '#/components/responses/Problem'}
-        '404': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Problem'}
   /fleets/{fleetId}/robots/{manufacturer}/{serialNumber}:
     get:
@@ -128,7 +129,7 @@ paths:
       responses:
         '200': {description: The robot., content: {application/json: {schema: {$ref: '#/components/schemas/Robot'}}}}
         '400': {$ref: '#/components/responses/Problem'}
-        '404': {$ref: '#/components/responses/Problem'}
+        '404': {$ref: '#/components/responses/NotFound'}
 
 components:
   parameters:
@@ -149,6 +150,17 @@ components:
   responses:
     Problem:
       description: An RFC 9457 problem.
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    NotFound:
+      description: >-
+        `fleet-not-found` or `robot-not-found` (RETRYABLE: the map file and the robot registry can change, so the key
+        is released), or `leg-not-found` (FINAL: legs are minted here and never deleted, so the answer is replayed).
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    LegRefused:
+      description: >-
+        The leg is refused at once, always RETRYABLE (the key is released): `unknown-handoff-point` and
+        `handoff-unreachable` (a new map version may add the point or join the two), `container-busy`,
+        `fleet-unavailable`.
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
     NotReady:
       description: Postgres, Kafka or the MQTT link unreachable, or draining (`dependency-unavailable`).

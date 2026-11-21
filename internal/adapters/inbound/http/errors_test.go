@@ -15,8 +15,10 @@ func TestTheProblemCatalogueIsTheRelationship4Table(t *testing.T) {
 		"idempotency-key-required": {400, "FINAL"}, "idempotency-key-reused": {409, "FINAL"},
 		"internal-error": {500, "RETRYABLE"}, "dependency-unavailable": {503, "RETRYABLE"},
 		"bad-request": {400, "FINAL"}, "invalid-parameter": {400, "FINAL"},
-		"fleet-not-found": {404, "FINAL"}, "leg-not-found": {404, "FINAL"}, "robot-not-found": {404, "FINAL"},
-		"unknown-handoff-point": {422, "FINAL"}, "handoff-unreachable": {422, "RETRYABLE"},
+		// ruling P3-R13: fleet-not-found, robot-not-found and unknown-handoff-point are RETRYABLE (the map
+		// file and the robot registry change inside the 24 h window); leg-not-found stays FINAL.
+		"fleet-not-found": {404, "RETRYABLE"}, "leg-not-found": {404, "FINAL"}, "robot-not-found": {404, "RETRYABLE"},
+		"unknown-handoff-point": {422, "RETRYABLE"}, "handoff-unreachable": {422, "RETRYABLE"},
 		"container-busy": {422, "RETRYABLE"}, "fleet-unavailable": {422, "RETRYABLE"},
 		"leg-not-cancellable": {409, "RETRYABLE"}, "leg-ended": {409, "RETRYABLE"},
 	}
