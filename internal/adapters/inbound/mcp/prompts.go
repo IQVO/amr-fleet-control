@@ -2,7 +2,9 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -25,10 +27,15 @@ func (d Deps) registerPrompts(server *mcp.Server) {
 		Arguments:   []*mcp.PromptArgument{{Name: "legId", Description: "the leg id to review, e.g. leg-0f3a91", Required: true}}},
 		func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 			id := strings.TrimSpace(req.Params.Arguments["legId"])
+			if strings.IndexFunc(id, unicode.IsControl) >= 0 {
+				// carry (Task 18 review M1): a control character (a newline forging SOP lines) is refused.
+				return nil, errors.New("validation-failed: legId must not contain control characters")
+			}
 			if id == "" {
 				id = "<legId>"
 			}
-			text := strings.ReplaceAll(strings.ReplaceAll(reviewLegSOP, "LEG", id), "FLEET", d.FleetID)
+			// carry (Task 18 review M1): one pass, so a legId holding "FLEET" is not rewritten to the fleet id.
+			text := strings.NewReplacer("FLEET", d.FleetID, "LEG", id).Replace(reviewLegSOP)
 			return &mcp.GetPromptResult{Description: "How to review a leg of the AMR fleet.",
 				Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: text}}}}, nil
 		})
