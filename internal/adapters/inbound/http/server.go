@@ -10,7 +10,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/riandyrn/otelchi"
+	otelchimetric "github.com/riandyrn/otelchi/metric"
 
+	"github.com/IQVO/amr-fleet-control/internal/adapters/inbound/requestlog"
 	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
 )
 
@@ -20,6 +23,8 @@ type Server struct {
 	Service     *usecases.Service
 	Idempotency func(http.Handler) http.Handler
 	Readiness   *Readiness
+	// ServiceName names the otelchi server spans and metric series (OTEL_SERVICE_NAME).
+	ServiceName string
 }
 
 // NewRouter builds every route of apis/openapi.yaml.
@@ -28,7 +33,16 @@ func NewRouter(s *Server, logger *slog.Logger) http.Handler {
 		logger = slog.Default()
 	}
 	r := chi.NewRouter()
+	name := s.ServiceName
+	if name == "" {
+		name = "amr-fleet-control"
+	}
+	metricCfg := otelchimetric.NewBaseConfig(name)
 	r.Use(middleware.RequestID)
+	r.Use(otelchi.Middleware(name, otelchi.WithChiRoutes(r)))
+	r.Use(otelchimetric.NewServerRequestDuration(metricCfg))
+	r.Use(otelchimetric.NewServerActiveRequests(metricCfg))
+	r.Use(requestlog.RequestLogger(logger))
 	r.Use(recoverPanic)
 	r.Get("/healthz", handleHealthz)
 	r.Get("/readyz", s.handleReadyz)

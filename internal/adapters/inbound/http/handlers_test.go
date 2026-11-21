@@ -11,6 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+
 	ahttp "github.com/IQVO/amr-fleet-control/internal/adapters/inbound/http"
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/memory"
 	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
@@ -265,5 +269,18 @@ func TestAPanicIsA500Problem(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/fleets/AMR1", nil))
 	if rec.Code != http.StatusInternalServerError || decode(t, rec)["code"] != "internal-error" {
 		t.Fatalf("panic = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestEveryRouteHasAServerSpanNamedAfterItsPattern(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr)))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	a := newAPI(t, "R1")
+	a.do("GET", "/fleets/AMR1/robots/EMU/R1", "", "")
+	spans := sr.Ended()
+	if len(spans) == 0 || spans[len(spans)-1].Name() != "/fleets/{fleetId}/robots/{manufacturer}/{serialNumber}" {
+		t.Fatalf("spans = %v", spans)
 	}
 }
