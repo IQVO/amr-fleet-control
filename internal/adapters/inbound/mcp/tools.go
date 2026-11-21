@@ -55,17 +55,20 @@ func (d Deps) registerTools(server *mcp.Server) {
 	addTool(server, &mcp.Tool{Name: "list_open_legs", Meta: authorityMeta(authorityL1),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
 		Description: "List the fleet's open legs (QUEUED, ASSIGNED, PICKED_UP, CANCEL_REQUESTED) in acceptance order, each the " +
-			"same shape as get_leg. Internal charge and park missions are not legs. Read-only."}, d.listOpenLegs)
+			"same shape as get_leg. Internal charge and park missions are not legs. Read-only; an unknown fleet fails with " +
+			"fleet-not-found (never an empty list)."}, d.listOpenLegs)
 	addTool(server, &mcp.Tool{Name: "get_leg", Meta: authorityMeta(authorityL1),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
 		Description: "Read one leg: container, from and to handoff points, status, the robot executing it, and once failed the " +
 			"reason (CANCELLED, ROBOT_BLOCKED, ROBOT_FAULT, ROBOT_OFFLINE, ORDER_REJECTED, PICK_FAILED, DROP_FAILED, " +
-			"MAP_VERSION_RETIRED) with the robot's errorType. Read-only; an unknown leg fails with leg-not-found."}, d.getLeg)
+			"MAP_VERSION_RETIRED) with the robot's errorType. Read-only; an unknown fleet fails with fleet-not-found, an " +
+			"unknown leg with leg-not-found."}, d.getLeg)
 	addTool(server, &mcp.Tool{Name: "get_robot", Meta: authorityMeta(authorityL1),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld},
 		Description: "Read one robot of the registry: connection, PackML state, battery, charging, availability, the node it " +
 			"stands on, its mission, its active error types, when it last reported, and its factsheet. Read-only; an unknown " +
-			"robot fails with robot-not-found."}, d.getRobot)
+			"fleet fails with fleet-not-found, a robot not seen yet with robot-not-found (a robot appears on its first " +
+			"report, so a later read may find it)."}, d.getRobot)
 }
 
 func (d Deps) getFleet(ctx context.Context, in fleetInput) (any, error) {

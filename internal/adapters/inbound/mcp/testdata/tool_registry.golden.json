@@ -33,7 +33,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Read one leg: container, from and to handoff points, status, the robot executing it, and once failed the reason (CANCELLED, ROBOT_BLOCKED, ROBOT_FAULT, ROBOT_OFFLINE, ORDER_REJECTED, PICK_FAILED, DROP_FAILED, MAP_VERSION_RETIRED) with the robot's errorType. Read-only; an unknown leg fails with leg-not-found.",
+    "description": "Read one leg: container, from and to handoff points, status, the robot executing it, and once failed the reason (CANCELLED, ROBOT_BLOCKED, ROBOT_FAULT, ROBOT_OFFLINE, ORDER_REJECTED, PICK_FAILED, DROP_FAILED, MAP_VERSION_RETIRED) with the robot's errorType. Read-only; an unknown fleet fails with fleet-not-found, an unknown leg with leg-not-found.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -63,7 +63,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Read one robot of the registry: connection, PackML state, battery, charging, availability, the node it stands on, its mission, its active error types, when it last reported, and its factsheet. Read-only; an unknown robot fails with robot-not-found.",
+    "description": "Read one robot of the registry: connection, PackML state, battery, charging, availability, the node it stands on, its mission, its active error types, when it last reported, and its factsheet. Read-only; an unknown fleet fails with fleet-not-found, a robot not seen yet with robot-not-found (a robot appears on its first report, so a later read may find it).",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -98,7 +98,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List the fleet's open legs (QUEUED, ASSIGNED, PICKED_UP, CANCEL_REQUESTED) in acceptance order, each the same shape as get_leg. Internal charge and park missions are not legs. Read-only.",
+    "description": "List the fleet's open legs (QUEUED, ASSIGNED, PICKED_UP, CANCEL_REQUESTED) in acceptance order, each the same shape as get_leg. Internal charge and park missions are not legs. Read-only; an unknown fleet fails with fleet-not-found (never an empty list).",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
