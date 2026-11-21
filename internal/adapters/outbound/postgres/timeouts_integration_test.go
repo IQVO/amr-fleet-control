@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/postgres"
+	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/postgres/pgtx"
 	"github.com/IQVO/amr-fleet-control/internal/application/fleetrow"
 	"github.com/IQVO/amr-fleet-control/internal/application/outbox"
 	"github.com/IQVO/amr-fleet-control/internal/testing/pgtest"
@@ -96,5 +97,28 @@ func TestDrainAndAnInsertOutsideAUnitCarryTheTimeouts(t *testing.T) {
 		if !errors.As(err, &pg) || (pg.SQLState() != "55P03" && pg.SQLState() != "57014") || elapsed > 6500*time.Millisecond {
 			t.Errorf("%s = %v after %v; want SQLSTATE 55P03 (lock_timeout) or 57014 (statement_timeout) within ~6 s", name, err, elapsed)
 		}
+	}
+}
+
+// lesson (plan 04 Task 19 review, finding 4): both timeouts are 5 s and the waits above accept
+// 55P03 or 57014, so a unit that dropped SET LOCAL lock_timeout would still pass them. Read both
+// settings inside a unit on a pool with no session settings.
+func TestAUnitStatesBothTimeouts(t *testing.T) {
+	pool := pgtest.BarePool(t)
+	err := postgres.NewUnitOfWork(pool).Do(context.Background(), func(ctx context.Context) error {
+		tx, ok := pgtx.From(ctx)
+		if !ok {
+			t.Fatal("no tx in the unit's ctx")
+		}
+		for _, s := range []string{"statement_timeout", "lock_timeout"} {
+			var v string
+			if err := tx.QueryRow(ctx, "SHOW "+s).Scan(&v); err != nil || v != "5s" {
+				t.Errorf("%s inside a unit = %q (%v), want 5s", s, v, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
