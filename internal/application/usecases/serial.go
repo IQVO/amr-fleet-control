@@ -52,6 +52,11 @@ func (s *SerialUnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) 
 // AfterCommit is the inner unit of work's.
 func (s *SerialUnitOfWork) AfterCommit(ctx context.Context, fn func()) { s.inner.AfterCommit(ctx, fn) }
 
+// Serialized marks the serial unit of work. carry (Task 14 brief amendment, ruling P3-R10
+// amended): the REST Idempotency middleware refuses a unit of work without it, so an adapter
+// can never be wired with the raw postgres or memory unit of work.
+func (s *SerialUnitOfWork) Serialized() {}
+
 // serialized wraps u unless it already is a SerialUnitOfWork.
 func serialized(u ports.UnitOfWork) *SerialUnitOfWork {
 	if s, ok := u.(*SerialUnitOfWork); ok {

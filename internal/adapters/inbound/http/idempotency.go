@@ -43,7 +43,19 @@ type Idempotency struct {
 	Logger *slog.Logger
 }
 
+// serialized is the marker of usecases.SerialUnitOfWork.
+type serialized interface{ Serialized() }
+
+// NewIdempotency builds the middleware over uow, which MUST be the Service's serialized unit of
+// work (Service.UnitOfWork). carry (Task 14 brief amendment, ruling P3-R10 amended): this unit
+// is the OUTERMOST one of a POST; over the raw unit of work it would take the transaction before
+// the serial lock (an ABBA deadlock against the link worker's Tick) and run its after-commit
+// robot commands outside the lock (a cancel could overtake its order on the wire). A unit of
+// work without the Serialized marker is a wiring bug, so it panics at boot.
 func NewIdempotency(store ports.IdempotencyStore, uow ports.UnitOfWork, clock ports.Clock) *Idempotency {
+	if _, ok := uow.(serialized); !ok {
+		panic(fmt.Sprintf("http.NewIdempotency: the unit of work %T has no Serialized marker; pass Service.UnitOfWork() (ruling P3-R10)", uow))
+	}
 	return &Idempotency{Store: store, UoW: uow, Clock: clock, Logger: slog.Default()}
 }
 

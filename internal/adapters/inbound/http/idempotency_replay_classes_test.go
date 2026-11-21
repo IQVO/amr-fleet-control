@@ -32,6 +32,7 @@ import (
 
 	ahttp "github.com/IQVO/amr-fleet-control/internal/adapters/inbound/http"
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/memory"
+	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
 )
 
 // Replay classes, as the catalogue entry declares them. The empty string is "unclassified".
@@ -467,7 +468,9 @@ func (a *repoAdapter) Catalogue() []problemEntry {
 
 func (a *repoAdapter) Middleware(_ *testing.T, next http.Handler) http.Handler {
 	clock := memory.NewClock(time.Date(2026, 11, 20, 8, 0, 0, 0, time.UTC))
-	return ahttp.NewIdempotency(a.idem, memory.NewUnitOfWork(a.db), clock).Middleware(next)
+	// carry (Task 14 brief amendment, ruling P3-R10 amended): NewIdempotency refuses a unit of
+	// work that is not serialized; production passes Service.UnitOfWork(), this decorator.
+	return ahttp.NewIdempotency(a.idem, usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(a.db)), clock).Middleware(next)
 }
 
 func (a *repoAdapter) Refuse(w http.ResponseWriter, r *http.Request, e problemEntry) {
