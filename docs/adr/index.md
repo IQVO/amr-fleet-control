@@ -7,3 +7,4 @@
 | [0003](0003-cloudevents-outbox-and-the-seven-facts.md) | CloudEvents through a transactional outbox: the seven facts | Accepted (2026-11-20) |
 | [0004](0004-subsystem-controller-rest-interface-and-replay-classes.md) | The subsystem-controller REST interface (relationship 4) and its replay classes | Accepted (2026-11-20) |
 | [0005](0005-adopt-the-fleet-observability-standard.md) | Adopt the fleet observability standard from the first release | Accepted (2026-11-20) |
+| [0006](0006-read-only-mcp-and-a2a-surfaces.md) | Read-only MCP (:8090) and A2A (:8093) surfaces at authority L1 | Accepted (2026-11-20) |
