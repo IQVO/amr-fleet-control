@@ -12,6 +12,7 @@ import (
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/postgres"
 	"github.com/IQVO/amr-fleet-control/internal/application/fleetrow"
+	"github.com/IQVO/amr-fleet-control/internal/application/idempotency"
 	"github.com/IQVO/amr-fleet-control/internal/application/ports"
 	"github.com/IQVO/amr-fleet-control/internal/domain/capacity"
 	"github.com/IQVO/amr-fleet-control/internal/domain/fleetmap"
@@ -108,4 +109,63 @@ func TestTheFleetRowLockSerialisesUnitsOfWork(t *testing.T) {
 	if rec.Capacity.LegsQueued != 20 {
 		t.Fatalf("lost updates: %d of 20", rec.Capacity.LegsQueued)
 	}
+}
+
+// carry (Task 12 review): asrs-control da5d808 TestIdempotencyStoreWindowAndPurge, plus the
+// first writer kept inside the window and two concurrent units racing on one key.
+func TestIdempotencyStoreWindowAndPurge(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.Pool(t)
+	idem := postgres.NewIdempotencyStore(pool)
+	rec := idempotency.IdempotencyRecord{Key: "k1", Fingerprint: "f", Status: 202, ContentType: "application/json", Body: []byte("{}"), CreatedAt: t0}
+	if err := idem.Save(ctx, rec, t0.Add(-24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok, _ := idem.Lookup(ctx, "k1", t0.Add(-24*time.Hour)); !ok || got.Status != 202 || got.Fingerprint != "f" || string(got.Body) != "{}" || !got.CreatedAt.Equal(t0) {
+		t.Fatalf("Lookup = %+v %v", got, ok)
+	}
+	if _, ok, _ := idem.Lookup(ctx, "k1", t0.Add(time.Second)); ok {
+		t.Fatal("an answer older than the window was replayed")
+	}
+	other := rec
+	other.Fingerprint, other.Status, other.CreatedAt = "g", 422, t0.Add(time.Minute)
+	_ = idem.Save(ctx, other, t0.Add(-24*time.Hour)) // inside the window: the first writer is kept
+	if got, _, _ := idem.Lookup(ctx, "k1", t0.Add(-24*time.Hour)); got.Fingerprint != "f" || got.Status != 202 {
+		t.Fatalf("a second writer inside the window replaced the first: %+v", got)
+	}
+	newer := rec
+	newer.Fingerprint, newer.CreatedAt = "h", t0.Add(25*time.Hour)
+	_ = idem.Save(ctx, newer, t0.Add(time.Hour)) // the old row is outside the window: replaced
+	if got, _, _ := idem.Lookup(ctx, "k1", t0); got.Fingerprint != "h" {
+		t.Fatalf("an expired row was not replaced: %+v", got)
+	}
+	if got := raceOneKey(ctx, postgres.NewUnitOfWork(pool), idem); got[0] != got[1] || got[0] == "" {
+		t.Fatalf("concurrent writers saw different answers: %v (both would commit their effects)", got)
+	}
+	if n, err := idem.Purge(ctx, t0.Add(26*time.Hour)); err != nil || n != 2 {
+		t.Fatalf("Purge = %d %v, want 2 (k1 and race)", n, err)
+	}
+}
+
+// raceOneKey runs two units that Save then Lookup the same key; it returns what each read.
+func raceOneKey(ctx context.Context, uow *postgres.UnitOfWork, idem *postgres.IdempotencyStore) []string {
+	var wg sync.WaitGroup
+	got := make([]string, 2)
+	for i, fp := range []string{"x", "y"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = uow.Do(ctx, func(c context.Context) error {
+				r := idempotency.IdempotencyRecord{Key: "race", Fingerprint: fp, Status: 201, CreatedAt: t0}
+				if err := idem.Save(c, r, t0.Add(-time.Hour)); err != nil {
+					return err
+				}
+				s, _, err := idem.Lookup(c, "race", t0.Add(-time.Hour))
+				got[i] = s.Fingerprint
+				return err
+			})
+		}()
+	}
+	wg.Wait()
+	return got
 }
