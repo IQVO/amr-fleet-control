@@ -20,7 +20,9 @@ Status: Accepted (2026-11-20). Resolves the handoff's open question "VDA 5050 ve
    (after a restart, or a leg failed while it was offline) gets `cancelOrder`; a robot with a cancel in flight is
    never offered an order, and no order is resent to it. An unanswered `cancelOrder` is re-sent with the same
    action id after `ORDER_RESEND_AFTER`; after `ORDER_RESEND_LIMIT` re-sends its leg ends `CANCELLED` with the
-   load the robot last reported, and a robot still reporting the pending order gets a fresh `cancelOrder`.
+   load the robot last reported, and a robot still reporting the pending order gets a fresh `cancelOrder`. A
+   `CANCEL_REQUESTED` leg whose robot goes offline or stays blocked, or whose map version is retired, also ends
+   `CANCELLED` with the load the robot last reported, never with another failure reason.
 3. **Reservations.** A robot always holds the node it stands on. A mission's base reaches at most
    `RELEASE_AHEAD_NODES` nodes past the robot's last node; a node or edge enters the base only once reserved for that
    robot; passed elements are released on the next `state`. Edges are undirected corridors. `orderUpdateId` rises by
@@ -28,8 +30,10 @@ Status: Accepted (2026-11-20). Resolves the handoff's open question "VDA 5050 ve
 4. **Deadlocks** are cycles of waits: each new cycle publishes one `DeadlockDetected` and re-routes its youngest
    mission around nodes held by others; a robot waiting longer than `REROUTE_AFTER` (10 s) for a node another
    robot holds is re-routed the same way; a cycle older than `DEADLOCK_TIMEOUT` (60 s) fails its youngest leg
-   `ROBOT_BLOCKED` and cancels its order, which frees its base. A robot that a cancel stopped mid-edge keeps the
-   edge it stands on and that edge's far node until it reports standing on a node again.
+   `ROBOT_BLOCKED` and cancels its order, which frees its base once the robot no longer reports it pending. A
+   robot without a mission that a cancel stopped mid-edge keeps the edge it stands on and that edge's far node
+   until it reports standing on a node again; a robot without a mission that still reports a pending order while
+   its `cancelOrder` is unanswered keeps everything it holds.
 5. **Charging and parking** are internal missions (publish nothing): below 20 % an idle robot drives to the nearest
    free charger and charges to 80 %; an idle robot off a parking or charger node drives to the nearest free parking.
 6. **The map is a file.** `AMR_MAP_FILE` holds `fleetId`, `mapId`, `version`, nodes with x/y and kind, undirected
@@ -47,8 +51,15 @@ Status: Accepted (2026-11-20). Resolves the handoff's open question "VDA 5050 ve
 - Order rejection is inferred from the `state` (no reply topic) by a rising count of rejection entries. The emulator
   keeps only the newest 50 errors, so a rejection reported on a full list does not raise the count; such an order
   stays unacknowledged until the resend limit fails it `ORDER_REJECTED` (about 20 s later).
-- A `cancelOrder` sent for an order no mission owns (`recover-` action ids) is not re-sent: there is no mission to
-  record its send time. Until the robot answers it, the robot is never offered an order.
+- Only a `CANCEL_REQUESTED` leg's `cancelOrder` is re-sent. Every other `cancelOrder` (one sent as a mission ends
+  failed, or one for an order no mission owns, `recover-` action ids) is sent once: no open mission records its
+  send time. Until the robot answers it, the robot is never offered an order. If it is lost, the tick forgets it
+  once the robot's latest `state` neither shows a pending order nor lists that action: nothing is left to cancel,
+  and anything sent later reaches the robot after the cancel. A lost cancel of a robot still reporting a pending
+  order is never forgotten; the robot stays unassignable until it answers.
+- A robot that a cancel stopped mid-edge and that then stands idle is assignable at its `lastNodeId`. The first
+  move of its next order leaves the reserved corridor: the emulator drives straight to the order's node 1, not
+  back along the edge it holds.
 - A retained `ONLINE` connection replayed after a restart counts as a sign of life: a silent robot looks online for
   at most one more `ROBOT_STALE_AFTER` (boot recovery asks every robot for a `state` at once).
 - Robots are discovered, not registered: any robot on the broker's `vda5050/v3` topics joins the fleet.
