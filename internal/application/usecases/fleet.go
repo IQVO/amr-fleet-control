@@ -31,10 +31,17 @@ type unit struct {
 
 type endedLeg struct{ outcome, reason string }
 
+// inFleet runs fn in one fleet unit of work. Every write path goes through here: the link
+// worker's messages and ticks and the HTTP use cases alike. ruling P3-R10: the unit holds
+// s.commit from load to the end of its after-commit hooks, because a Postgres commit releases
+// the fleet row lock BEFORE the hooks enqueue the robot commands; without the mutex a later
+// unit could enqueue first (a cancel overtaking its order on the wire).
 func (s *Service) inFleet(ctx context.Context, fn func(u *unit) error) error {
 	if s.d.UoW == nil {
 		return ErrReadOnly
 	}
+	s.commit.Lock()
+	defer s.commit.Unlock()
 	return s.d.UoW.Do(ctx, func(ctx context.Context) error {
 		u, err := s.load(ctx)
 		if err != nil {

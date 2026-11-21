@@ -65,6 +65,12 @@ type harness struct {
 
 func newHarness(t *testing.T, m *fleetmap.Map, tune func(*usecases.Config)) *harness {
 	t.Helper()
+	return newHarnessWith(t, m, tune, nil)
+}
+
+// newHarnessWith is newHarness whose dependencies deps may wrap (ruling P3-R10 tests).
+func newHarnessWith(t *testing.T, m *fleetmap.Map, tune func(*usecases.Config), deps func(*usecases.Deps)) *harness {
+	t.Helper()
 	s := memory.NewStore()
 	h := &harness{t: t, m: m, clock: memory.NewClock(t0), down: memory.NewDownlink(), events: memory.NewEvents(s),
 		metrics: memory.NewMetrics(), fleets: memory.NewFleets(s), robots: memory.NewRobots(s), missions: memory.NewMissions(s),
@@ -73,9 +79,13 @@ func newHarness(t *testing.T, m *fleetmap.Map, tune func(*usecases.Config)) *har
 	if tune != nil {
 		tune(&cfg)
 	}
-	svc, err := usecases.NewService(m, cfg, usecases.Deps{UoW: memory.NewUnitOfWork(s), Fleets: h.fleets, Robots: h.robots,
+	d := usecases.Deps{UoW: memory.NewUnitOfWork(s), Fleets: h.fleets, Robots: h.robots,
 		Missions: h.missions, Sink: h.events, Downlink: h.down, Clock: h.clock, IDs: memory.NewIDs("u"), Metrics: h.metrics,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if deps != nil {
+		deps(&d)
+	}
+	svc, err := usecases.NewService(m, cfg, d)
 	if err != nil {
 		t.Fatal(err)
 	}

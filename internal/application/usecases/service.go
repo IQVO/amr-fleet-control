@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/IQVO/amr-fleet-control/internal/application/ports"
@@ -90,6 +91,9 @@ type Service struct {
 	m   *fleetmap.Map
 	cfg Config
 	d   Deps
+	// ruling P3-R10: every unit of work commits and hands its robot commands to the Downlink
+	// under this one in-process mutex (single api replica), so commands enqueue in commit order.
+	commit sync.Mutex
 }
 
 func NewService(m *fleetmap.Map, cfg Config, d Deps) (*Service, error) {
