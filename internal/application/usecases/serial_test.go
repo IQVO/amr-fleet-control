@@ -2,6 +2,7 @@ package usecases_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"runtime/pprof"
 	"testing"
@@ -129,5 +130,31 @@ func TestASerialUnitOfWorkJoinsOnlyItsOwnOpenFrame(t *testing.T) {
 		return nil
 	}); err != nil || !hooked {
 		t.Fatalf("err = %v, hook ran = %v (AfterCommit passes through to the inner unit of work)", err, hooked)
+	}
+}
+
+// carry (Task 11 review): a ctx kept from a finished unit takes the serial lock again AND opens
+// a fresh inner unit: the inner unit of work joins only an OPEN frame, so a hook registered in
+// it runs after its own commit and an error rolls its writes back.
+func TestProbeStaleCtxInnerJoin(t *testing.T) {
+	st := memory.NewStore()
+	s := usecases.NewSerialUnitOfWork(memory.NewUnitOfWork(st))
+	var kept context.Context
+	if err := s.Do(ctx, func(c context.Context) error { kept = c; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	if err := s.Do(kept, func(c context.Context) error {
+		s.AfterCommit(c, func() { ran = true })
+		return st.Tag(c, "kept")
+	}); err != nil || !ran {
+		t.Fatalf("err = %v, hook ran = %v: a unit opened from a finished unit's ctx must run its hooks", err, ran)
+	}
+	_ = s.Do(kept, func(c context.Context) error {
+		_ = st.Tag(c, "rolled-back")
+		return errors.New("roll back")
+	})
+	if st.Tagged("kept") != 1 || st.Tagged("rolled-back") != 0 {
+		t.Fatalf("tags kept=%d rolled-back=%d, want 1 and 0", st.Tagged("kept"), st.Tagged("rolled-back"))
 	}
 }

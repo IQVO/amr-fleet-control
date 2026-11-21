@@ -8,6 +8,7 @@ import (
 	"context"
 	"maps"
 	"sync"
+	"sync/atomic"
 
 	"github.com/IQVO/amr-fleet-control/internal/application/fleetrow"
 	"github.com/IQVO/amr-fleet-control/internal/application/idempotency"
@@ -74,7 +75,18 @@ func cloneRecord(r fleetrow.Record) fleetrow.Record {
 
 type uowKey struct{}
 
-type frame struct{ hooks []func() }
+// frame is one outermost unit of work. carry (Task 11 review): done is set once its hooks ran
+// (or it rolled back), so a ctx kept from a finished unit never joins it.
+type frame struct {
+	hooks []func()
+	done  atomic.Bool
+}
+
+// open returns the unfinished frame ctx carries.
+func open(ctx context.Context) (*frame, bool) {
+	f, ok := ctx.Value(uowKey{}).(*frame)
+	return f, ok && !f.done.Load()
+}
 
 // UnitOfWork is the in-memory ports.UnitOfWork.
 type UnitOfWork struct{ s *Store }
@@ -82,7 +94,7 @@ type UnitOfWork struct{ s *Store }
 func NewUnitOfWork(s *Store) *UnitOfWork { return &UnitOfWork{s: s} }
 
 func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error) (err error) {
-	if _, inner := ctx.Value(uowKey{}).(*frame); inner {
+	if _, inner := open(ctx); inner {
 		return fn(ctx)
 	}
 	u.s.tx.Lock()
@@ -90,6 +102,7 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error)
 	var before tables
 	u.s.with(func(t *tables) { before = t.clone() })
 	f := &frame{}
+	defer f.done.Store(true) // runs after the hooks: a hook's own Do still joins this unit
 	defer func() {
 		if p := recover(); p != nil {
 			u.s.with(func(t *tables) { *t = before })
@@ -107,7 +120,7 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error)
 }
 
 func (u *UnitOfWork) AfterCommit(ctx context.Context, fn func()) {
-	if f, ok := ctx.Value(uowKey{}).(*frame); ok {
+	if f, ok := open(ctx); ok {
 		f.hooks = append(f.hooks, fn)
 		return
 	}

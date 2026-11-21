@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -20,8 +21,22 @@ type querier interface {
 
 type hooksKey struct{}
 
-// hooks are the after-commit functions of the outermost unit of work.
-type hooks struct{ fns []func() }
+// hooks are the after-commit functions of the outermost unit of work. carry (Task 11 review):
+// done is set once its transaction committed or rolled back, so a ctx kept from a finished
+// unit (it still carries the closed transaction) never joins it.
+type hooks struct {
+	fns  []func()
+	done atomic.Bool
+}
+
+// joinable reports whether ctx carries a transaction of a unit of work that is still open.
+func joinable(ctx context.Context) bool {
+	if _, ok := pgtx.From(ctx); !ok {
+		return false
+	}
+	h, ok := ctx.Value(hooksKey{}).(*hooks)
+	return !ok || !h.done.Load()
+}
 
 // UnitOfWork is the pgx ports.UnitOfWork: Do begins one READ COMMITTED transaction carried in
 // ctx (pgtx), commits on a nil return and rolls back otherwise; a ctx that already carries a
@@ -32,7 +47,7 @@ type UnitOfWork struct{ pool *pgxpool.Pool }
 func NewUnitOfWork(pool *pgxpool.Pool) *UnitOfWork { return &UnitOfWork{pool: pool} }
 
 func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error) error {
-	if _, ok := pgtx.From(ctx); ok {
+	if joinable(ctx) {
 		return fn(ctx)
 	}
 	// READ COMMITTED is stated, not inherited: the aisle row locks (SELECT ... FOR UPDATE) and
@@ -44,10 +59,13 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error)
 	// Rollback after Commit is a harmless no-op; it also covers a panic in fn.
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	h := &hooks{}
+	defer h.done.Store(true) // a rollback (error or panic) finishes the frame too
 	if err := fn(context.WithValue(pgtx.With(ctx, tx), hooksKey{}, h)); err != nil {
 		return err
 	}
-	if err := tx.Commit(ctx); err != nil {
+	err = tx.Commit(ctx)
+	h.done.Store(true)
+	if err != nil {
 		return fmt.Errorf("commit unit of work: %w", err)
 	}
 	for _, f := range h.fns {
@@ -58,7 +76,7 @@ func (u *UnitOfWork) Do(ctx context.Context, fn func(ctx context.Context) error)
 
 // AfterCommit implements ports.UnitOfWork.
 func (u *UnitOfWork) AfterCommit(ctx context.Context, fn func()) {
-	if h, ok := ctx.Value(hooksKey{}).(*hooks); ok {
+	if h, ok := ctx.Value(hooksKey{}).(*hooks); ok && !h.done.Load() {
 		h.fns = append(h.fns, fn)
 		return
 	}

@@ -23,3 +23,15 @@ func TestAfterCommitInsideAnOpenUnitOfWorkWaits(t *testing.T) {
 		t.Fatalf("ran %d, queued %d; want 0 and 2", ran, len(h.fns))
 	}
 }
+
+// carry (Task 11 review): a finished frame queues nothing: its hooks already ran.
+func TestAfterCommitOnAFinishedUnitOfWorkRunsAtOnce(t *testing.T) {
+	h := &hooks{}
+	h.done.Store(true)
+	ctx := context.WithValue(context.Background(), hooksKey{}, h)
+	ran := 0
+	NewUnitOfWork(nil).AfterCommit(ctx, func() { ran++ })
+	if ran != 1 || len(h.fns) != 0 {
+		t.Fatalf("ran %d, queued %d; want 1 and 0", ran, len(h.fns))
+	}
+}

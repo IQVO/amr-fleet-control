@@ -34,9 +34,10 @@ type IDs interface{ NewID() string }
 // registration order; the hooks are dropped when it rolls back or panics. Outside a unit of work
 // fn runs at once. Robot commands are sent only from such a hook.
 //
-// carry (Task 11 review): never open a unit from a ctx of a finished unit or from a goroutine
-// spawned inside one: Do would join a frame that already committed (or is still running on
-// another goroutine), so its writes and hooks escape the unit they belong to.
+// carry (Task 11 review): Do joins only an OPEN unit: a ctx kept from a finished unit opens a
+// unit of its own (and AfterCommit on it runs at once). Still never open a unit from a
+// goroutine spawned inside a running one: Do would join a frame that is still running on
+// another goroutine, so its writes and hooks escape the unit they belong to.
 type UnitOfWork interface {
 	Do(ctx context.Context, fn func(ctx context.Context) error) error
 	AfterCommit(ctx context.Context, fn func())

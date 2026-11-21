@@ -117,3 +117,31 @@ func TestFleetsAndRobotsRoundTrip(t *testing.T) {
 		t.Fatalf("Get unknown = %v", err)
 	}
 }
+
+// carry (Task 11 review): Do joins only an OPEN frame. A ctx kept from a finished unit opens a
+// unit of its own (hooks run after its commit, an error rolls back), and AfterCommit on a
+// finished frame runs at once instead of queueing a hook nobody runs.
+func TestADoFromAFinishedUnitsCtxOpensItsOwnUnit(t *testing.T) {
+	s := memory.NewStore()
+	uow := memory.NewUnitOfWork(s)
+	var kept context.Context
+	_ = uow.Do(context.Background(), func(c context.Context) error { kept = c; return nil })
+	ran := 0
+	if err := uow.Do(kept, func(c context.Context) error {
+		uow.AfterCommit(c, func() { ran++ })
+		return s.Tag(c, "kept")
+	}); err != nil || ran != 1 {
+		t.Fatalf("err = %v, hook ran %d times, want 1", err, ran)
+	}
+	_ = uow.Do(kept, func(c context.Context) error {
+		_ = s.Tag(c, "rolled-back")
+		return errors.New("roll back")
+	})
+	if s.Tagged("kept") != 1 || s.Tagged("rolled-back") != 0 {
+		t.Fatalf("tags kept=%d rolled-back=%d, want 1 and 0", s.Tagged("kept"), s.Tagged("rolled-back"))
+	}
+	uow.AfterCommit(kept, func() { ran++ })
+	if ran != 2 {
+		t.Fatal("AfterCommit on a finished frame must run at once")
+	}
+}
