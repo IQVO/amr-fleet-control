@@ -28,6 +28,8 @@ func (u *unit) schedule() error {
 func (u *unit) extendAll() {
 	for _, ms := range u.missions {
 		r := u.robots[ms.Robot().Key()]
+		// carry (Task 5 review): the only ms.Extend call site; CANCEL_REQUESTED (and every other
+		// status) is skipped here, and mission.Extend refuses it too.
 		if (ms.Status() != mission.Assigned && ms.Status() != mission.PickedUp) || r == nil || !r.Online() {
 			continue
 		}
@@ -228,6 +230,11 @@ func (u *unit) launch(r *robot.Robot, ms *mission.Mission, evs []any, insert boo
 			return err
 		}
 	}
+	// carry (Task 4 review): Robot.Assign guards neither state nor battery, by design. This is its
+	// only call site, and launch is reached only from assignAll (candidates: no mission and
+	// Assignable(ChargeLow), so never below the threshold), chargeAll (no mission and
+	// NeedsCharge(ChargeLow)) and parkAll (no mission and Assignable(ChargeLow)); each robot is
+	// re-checked after the earlier policies ran (TestARobotBelowTheChargeThresholdNeverGetsALeg).
 	rev, err := r.Assign(ms.ID(), u.now)
 	if err != nil {
 		return err

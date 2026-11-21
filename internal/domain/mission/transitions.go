@@ -45,7 +45,9 @@ func (m *Mission) Seen(updateID uint32) {
 
 // Extend releases the route up to newEnd: the next order update (responsibility 3).
 func (m *Mission) Extend(newEnd int) error {
-	if !m.Active() {
+	// carry (Task 5 review): like Reroute, Extend refuses a CANCEL_REQUESTED leg, so no base is
+	// released to a robot that was asked to cancel (usecases.extendAll also skips it).
+	if m.s.Status != Assigned && m.s.Status != PickedUp {
 		return m.refuse("Extend")
 	}
 	if newEnd <= m.s.BaseEnd || newEnd >= len(m.s.Route) {

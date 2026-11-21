@@ -70,23 +70,36 @@ func (u *unit) nodeOf(rep robot.Report) string {
 	return n
 }
 
+// track follows a robot's mission through one state report.
+//
+// carry (Task 4 review): a rejection counts only when the number of VALIDATION_FAILURE /
+// INVALID_ORDER entries RISES (decision D19). The emulator (dc8bd1a) keeps only the newest
+// MaxReported = 50 errors, so a rejection reported on a full list of rejections drops the oldest
+// entry and the count stays at 50: that rejection is not seen here, and robot.Error carries only
+// type and level, so a "changed last entry" cannot tell it apart either. The order stays
+// unacknowledged and the tick's resend limit (ORDER_RESEND_LIMIT resends, Task 9) fails the leg
+// ORDER_REJECTED instead (TestARejectionOnAFullErrorListIsLeftToTheResendLimit).
+//
+// carry (Task 5 review): a CANCEL_REQUESTED leg never reaches u.fail here. mission.Fail derives
+// container_on_robot from PICKED_UP only, so it ends through confirmCancel, which passes the
+// robot's reported load to ConfirmCancel. Its cancelOrder action id is the leg's own, so it is
+// confirmed whichever order id the robot reports (an order it never acknowledged included).
 func (u *unit) track(ms *mission.Mission, rep robot.Report, before int) error {
 	ours := rep.OrderID == ms.ID()
-	if (!ours || rep.OrderUpdateID < ms.UpdateID()) && ms.Unacknowledged() && rep.Rejections() > before {
+	cancelling := ms.Status() == mission.CancelRequested
+	if !cancelling && (!ours || rep.OrderUpdateID < ms.UpdateID()) && ms.Unacknowledged() && rep.Rejections() > before {
 		return u.fail(ms, mission.ReasonOrderRejected, lastError(rep, true), ours)
 	}
-	if !ours {
-		return nil
-	}
-	ms.Seen(rep.OrderUpdateID)
-	u.touchM(ms)
-	if i, ok := vda.IndexOfSeq(rep.LastNodeSeq); ok && i <= ms.BaseEnd() {
-		if err := ms.Progress(i); err != nil {
+	if ours {
+		if err := u.seen(ms, rep); err != nil {
 			return err
 		}
 	}
-	if ms.Status() == mission.CancelRequested {
+	if cancelling {
 		return u.confirmCancel(ms, rep)
+	}
+	if !ours {
+		return nil
 	}
 	if e, fatal := rep.Fatal(); fatal {
 		return u.fail(ms, mission.ReasonRobotFault, e, true)
@@ -95,6 +108,16 @@ func (u *unit) track(ms *mission.Mission, rep robot.Report, before int) error {
 		return u.legActions(ms, rep)
 	}
 	return u.internalActions(ms, rep)
+}
+
+// seen records the order update a report of this mission's own order shows, and its progress.
+func (u *unit) seen(ms *mission.Mission, rep robot.Report) error {
+	ms.Seen(rep.OrderUpdateID)
+	u.touchM(ms)
+	if i, ok := vda.IndexOfSeq(rep.LastNodeSeq); ok && i <= ms.BaseEnd() {
+		return ms.Progress(i)
+	}
+	return nil
 }
 
 func (u *unit) legActions(ms *mission.Mission, rep robot.Report) error {

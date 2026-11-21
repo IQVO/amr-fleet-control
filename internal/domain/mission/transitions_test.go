@@ -275,3 +275,17 @@ func TestInternalMissionsEndSilently(t *testing.T) {
 		t.Fatalf("charge Fail = %v %v", evs, err)
 	}
 }
+
+// carry (Task 5 review): Extend refuses a CANCEL_REQUESTED leg and changes nothing.
+func TestExtendRefusesACancelRequestedLeg(t *testing.T) {
+	m := assigned(t)
+	if now, _, err := m.RequestCancel(t0); now || err != nil || m.Status() != mission.CancelRequested {
+		t.Fatalf("RequestCancel = %v %v, status %s", now, err, m.Status())
+	}
+	if err := m.Extend(4); !errors.Is(err, mission.ErrInvalidTransition) {
+		t.Fatalf("Extend on CANCEL_REQUESTED = %v", err)
+	}
+	if m.UpdateID() != 0 || m.OrderStart() != 0 || m.BaseEnd() != 2 {
+		t.Fatalf("a refused Extend changed the mission: update %d start %d end %d", m.UpdateID(), m.OrderStart(), m.BaseEnd())
+	}
+}
