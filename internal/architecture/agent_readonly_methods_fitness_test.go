@@ -18,6 +18,11 @@ import (
 // list, not a type check: the sensor parses (fixtures need no module to compile against), so a selector is
 // judged by its name.
 //
+// carry (Task 18 review): the pool's raw-SQL entry points are refused too (Query, QueryRow, Acquire,
+// AcquireFunc, AcquireAllIdle, Conn, PgConn, ExecParams, Hijack): Query/QueryRow run ANY SQL, so a pool built
+// by the allowlisted postgres.NewPool is a write seam without them. The only legit pool method in agent
+// sources is Close; the Reader's own reads go through the postgres adapter, never a raw pool call.
+//
 // False-positive allowances, by design: a package-qualified FUNCTION is not a method and is judged by the
 // allowlist instead (slices.Insert, slices.Delete, time.Tick stay allowed; usecases/postgres identifiers keep
 // their allowlist). Anything else with one of these names is refused even when it is not a database write (a
@@ -25,7 +30,8 @@ import (
 // agentWriteVerbAllowances with the reason.
 var agentWriteVerbs = []string{"Save", "Insert", "Exec", "Begin", "BeginTx", "CopyFrom", "SendBatch", "Enqueue",
 	"Append", "Lock", "Purge", "Delete", "Update",
-	"RequestLeg", "CancelLeg", "HandleState", "HandleConnection", "HandleFactsheet", "Tick", "Recover", "UnitOfWork", "AfterCommit"}
+	"RequestLeg", "CancelLeg", "HandleState", "HandleConnection", "HandleFactsheet", "Tick", "Recover", "UnitOfWork", "AfterCommit",
+	"Query", "QueryRow", "Acquire", "AcquireFunc", "AcquireAllIdle", "Conn", "PgConn", "ExecParams", "Hijack"}
 
 // agentWriteVerbAllowances maps an exact selector expression (types.ExprString) to why it is not a write. Empty:
 // no agent source needs one today.
@@ -81,9 +87,13 @@ func TestAgentReadOnlySensorRefusesWriteMethodsAndRawDrivers(t *testing.T) {
 		"a method expression of a write":       "package x\n" + pg + "var _ = (*postgres.Robots).Save\n",
 		"a write use case on the reader":       "package x\nfunc f(r reader) { _, _ = r.RequestLeg(ctx, req) }\n",
 		"the reader's unit of work":            "package x\nfunc f(r reader) { _ = r.UnitOfWork() }\n",
-		"a pgx import":                         "package x\nimport _ \"github.com/jackc/pgx/v5/pgxpool\"\n",
-		"a pgx root import":                    "package x\nimport _ \"github.com/jackc/pgx/v5\"\n",
-		"a database/sql import":                "package x\nimport _ \"database/sql\"\n",
+		// carry (Task 18 review): raw SQL through the pool.
+		"raw SQL through pool.Query":    "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); _, _ = p.Query(ctx, \"DELETE FROM missions\") }\n",
+		"raw SQL through pool.QueryRow": "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); _ = p.QueryRow(ctx, \"UPDATE fleets SET map_version = 1 RETURNING 1\") }\n",
+		"a pooled connection":           "package x\n" + pg + "func f() { p, _ := postgres.NewPool(ctx, dsn); c, _ := p.Acquire(ctx); _ = c.Conn().PgConn().ExecParams(ctx, \"DELETE FROM missions\", nil, nil, nil, nil) }\n",
+		"a pgx import":                  "package x\nimport _ \"github.com/jackc/pgx/v5/pgxpool\"\n",
+		"a pgx root import":             "package x\nimport _ \"github.com/jackc/pgx/v5\"\n",
+		"a database/sql import":         "package x\nimport _ \"database/sql\"\n",
 	}
 	for _, verb := range agentWriteVerbs {
 		bad["the write verb "+verb] = "package x\nfunc f(v repo) { _ = v." + verb + " }\n"
