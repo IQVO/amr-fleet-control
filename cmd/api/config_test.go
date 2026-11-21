@@ -85,7 +85,48 @@ func checkRefusals(t *testing.T, base map[string]string) {
 	for k, v := range base {
 		garbage[k] = v
 	}
-	if c, err := loadConfig(env(garbage)); err != nil || c.Policy.ReleaseAhead != 2 || c.Policy.StaleAfter != 90*time.Second {
-		t.Fatalf("unparsable values must fall back to the defaults: %+v %v", c.Policy, err)
+	// lesson (plan 04 Task 19 review, finding 1): an invalid value is a boot error naming it; the
+	// brief's "unparsable values must fall back to the defaults" is superseded (deviation D2).
+	_, err := loadConfig(env(garbage))
+	for _, name := range []string{"RELEASE_AHEAD_NODES", "ROBOT_STALE_AFTER_SECONDS"} {
+		if err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("unparsable or negative %s booted: %v", name, err)
+		}
+	}
+}
+
+// lesson (plan 04 Task 19 review, finding 1, ruling P4-R14): every interval, timeout, batch, count
+// and the outbox attempt cap must be at least 1 and every threshold a finite number above 0. A 0
+// would panic a ticker, disable a cap or end every leg at once, so it is a boot error naming the
+// variable, never a silent default.
+func TestAZeroOrInvalidSettingIsABootErrorNamingIt(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "KAFKA_BROKERS": "127.0.0.1:9092", "MQTT_URL": "tcp://127.0.0.1:1883", "AMR_MAP_FILE": "/m.yaml"}
+	bad := map[string][]string{}
+	for _, name := range []string{"OUTBOX_INTERVAL_MS", "OUTBOX_BATCH", "OUTBOX_MAX_ATTEMPTS", "RELEASE_AHEAD_NODES",
+		"ROBOT_STALE_AFTER_SECONDS", "ORDER_RESEND_AFTER_SECONDS", "ORDER_RESEND_LIMIT", "REROUTE_AFTER_SECONDS",
+		"DEADLOCK_TIMEOUT_SECONDS", "ROBOT_BLOCKED_TIMEOUT_SECONDS", "ROBOT_OFFLINE_TIMEOUT_SECONDS"} {
+		bad[name] = []string{"0", "-3", "1.5", "soon"}
+	}
+	for _, name := range []string{"CHARGE_LOW_PERCENT", "CHARGE_RESUME_PERCENT", "NODE_TOLERANCE_METRES"} {
+		bad[name] = []string{"0", "-1", "NaN", "+Inf", "high"}
+	}
+	for name, values := range bad {
+		for _, v := range values {
+			m := map[string]string{name: v}
+			for k, bv := range base {
+				m[k] = bv
+			}
+			if _, err := loadConfig(env(m)); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("%s=%q: err = %v, want a boot error naming it", name, v, err)
+			}
+		}
+	}
+	m := map[string]string{"OUTBOX_INTERVAL_MS": "1", "OUTBOX_BATCH": "1", "OUTBOX_MAX_ATTEMPTS": "1", "ORDER_RESEND_LIMIT": "1"}
+	for k, bv := range base {
+		m[k] = bv
+	}
+	if c, err := loadConfig(env(m)); err != nil || c.OutboxInterval != time.Millisecond || c.OutboxBatch != 1 || c.OutboxMaxAttempts != 1 ||
+		c.Policy.ResendLimit != 1 {
+		t.Fatalf("the smallest valid values = %+v %v", c, err)
 	}
 }
