@@ -83,17 +83,20 @@ func (u *UnitOfWork) AfterCommit(ctx context.Context, fn func()) {
 	fn()
 }
 
-// queryFor returns the transaction carried by ctx, or pool.
+// queryFor returns the transaction of the open unit of work ctx carries, or pool. carry
+// (Task 12 review): a ctx kept from a finished unit still carries its closed transaction, so
+// only a joinable one is used.
 func queryFor(ctx context.Context, pool *pgxpool.Pool) querier {
-	if tx, ok := pgtx.From(ctx); ok {
+	if tx, ok := pgtx.From(ctx); ok && joinable(ctx) {
 		return tx
 	}
 	return pool
 }
 
-// inTx runs fn on the ctx transaction, or on a transaction of its own.
+// inTx runs fn on the open unit's transaction, or on a transaction of its own. carry (Task 12
+// review): a finished unit's ctx begins a transaction of its own.
 func inTx(ctx context.Context, pool *pgxpool.Pool, fn func(q querier) error) error {
-	if tx, ok := pgtx.From(ctx); ok {
+	if tx, ok := pgtx.From(ctx); ok && joinable(ctx) {
 		return fn(tx)
 	}
 	tx, err := begin(ctx, pool)

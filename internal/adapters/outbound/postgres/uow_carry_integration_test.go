@@ -9,6 +9,7 @@ import (
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/postgres"
 	"github.com/IQVO/amr-fleet-control/internal/application/fleetrow"
+	"github.com/IQVO/amr-fleet-control/internal/application/outbox"
 	"github.com/IQVO/amr-fleet-control/internal/testing/pgtest"
 )
 
@@ -67,5 +68,28 @@ func TestAHooksOwnDoBeginsItsOwnTransaction(t *testing.T) {
 	}
 	if _, ok, err := fleets.Get(ctx, "AMR9"); !ok || err != nil {
 		t.Fatalf("the hook's write did not commit: %v %v", ok, err)
+	}
+}
+
+// carry (Task 12 review): a repository call made outside Do with a ctx kept from a finished
+// unit must not run on that unit's closed transaction: queryFor falls back to the pool and
+// inTx begins a transaction of its own.
+func TestARepositoryCallOnAFinishedUnitsCtxRunsOutsideIt(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.Pool(t)
+	uow, fleets, repo := postgres.NewUnitOfWork(pool), postgres.NewFleets(pool), postgres.NewOutboxRepo(pool)
+	var kept context.Context
+	if err := uow.Do(ctx, func(c context.Context) error { kept = c; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := fleets.Get(kept, "AMR1"); err != nil {
+		t.Errorf("Fleets.Get on a finished unit's ctx = %v", err)
+	}
+	if err := repo.Insert(kept, outbox.Message{EventID: "e", Topic: "t", EventType: "x", Subject: "s", DataSchema: "u", Value: []byte("{}")}); err != nil {
+		t.Errorf("OutboxRepo.Insert on a finished unit's ctx = %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE event_id = 'e'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("outbox rows committed = %d (%v), want 1", n, err)
 	}
 }
