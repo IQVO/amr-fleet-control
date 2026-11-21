@@ -171,8 +171,13 @@ func parse(ec *a2asrv.ExecutorContext) (skillRequest, *problem) {
 	return req, nil
 }
 
+// reply is the agent Message of one run, bound to the caller's contextId only. carry (plan 04 Task 21 review
+// lesson): no taskId; NewMessageForTask stamps the id the SDK mints for every run, but a message-only agent creates
+// no Task, so naming it would point a client at a task no store holds.
 func reply(ec *a2asrv.ExecutorContext, env envelope, summary string) a2a.Event {
-	return a2a.NewMessageForTask(a2a.MessageRoleAgent, ec, a2a.NewDataPart(env), a2a.NewTextPart(summary))
+	msg := a2a.NewMessage(a2a.MessageRoleAgent, a2a.NewDataPart(env), a2a.NewTextPart(summary))
+	msg.ContextID = ec.ContextID
+	return msg
 }
 
 func stamp(t time.Time) any {
