@@ -80,10 +80,17 @@ func (u *unit) timeouts() error {
 
 // resends repeats an unacknowledged order after ORDER_RESEND_AFTER and fails it ORDER_REJECTED
 // after ORDER_RESEND_LIMIT resends (decision D19).
+//
+// carry (Task 8 review): a CANCEL_REQUESTED leg's order is never resent nor failed ORDER_REJECTED,
+// and no order is resent while its robot awaits a cancelOrder answer (a robot with a cancel in
+// flight is never offered an order, D19).
 func (u *unit) resends() error {
 	for _, ms := range u.missions {
 		r := u.robots[ms.Robot().Key()]
 		if !ms.Unacknowledged() || r == nil || !r.Online() || u.now.Sub(ms.SentAt()) < u.s.cfg.ResendAfter {
+			continue
+		}
+		if ms.Status() == mission.CancelRequested || r.AwaitingAction() != "" {
 			continue
 		}
 		if ms.Resends() >= u.s.cfg.ResendLimit {
