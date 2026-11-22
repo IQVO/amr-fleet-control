@@ -57,7 +57,7 @@ func problemFromUseCase(ctx context.Context, err error) *problem {
 			return &p
 		}
 	}
-	slog.ErrorContext(ctx, "a2a skill failed", "error", err)
+	slog.ErrorContext(ctx, "a2a skill failed", "error", logReplacer.Replace(err.Error()))
 	return &problem{Type: "internal-error", Code: "internal-error", Title: "Internal error", Detail: "an unexpected internal error occurred", Status: 500}
 }
 
