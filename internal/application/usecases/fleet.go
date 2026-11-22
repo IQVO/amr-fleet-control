@@ -127,7 +127,7 @@ func (u *unit) afterCommit() {
 	d.UoW.AfterCommit(u.ctx, func() {
 		for _, send := range sends {
 			if err := send(ctx); err != nil {
-				d.Log.Warn("robot command not sent; an unacknowledged order is resent by the tick (so are a cancelOrder and a stopCharging)", "err", err)
+				d.Log.Warn("robot command not sent; an unacknowledged order is resent by the tick (so are a cancelOrder and a stopCharging)", "err", sanitizeErr(err))
 			}
 		}
 		for _, e := range ended {
@@ -165,7 +165,7 @@ func (u *unit) robotFor(id robot.ID) (*robot.Robot, bool) {
 	}
 	r, err := robot.New(id, u.now)
 	if err != nil {
-		u.s.d.Log.Warn("message from an invalid robot id ignored", "manufacturer", id.Manufacturer, "serial", id.SerialNumber)
+		u.s.d.Log.Warn("message from an invalid robot id ignored", "manufacturer", sanitizeLog(id.Manufacturer), "serial", sanitizeLog(id.SerialNumber))
 		return nil, false
 	}
 	u.robots[id.Key()] = r
@@ -233,7 +233,7 @@ func (u *unit) hold(r *robot.Robot) {
 		return
 	}
 	if err := u.fm.Reserve(key, []string{r.Node()}, nil); err != nil {
-		u.s.d.Log.Warn("a robot stands on a node it cannot hold", "robot", key, "node", r.Node(), "err", err)
+		u.s.d.Log.Warn("a robot stands on a node it cannot hold", "robot", sanitizeLog(key), "node", sanitizeLog(r.Node()), "err", sanitizeErr(err))
 	}
 }
 

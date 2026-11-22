@@ -66,7 +66,7 @@ func (a *app) purge(ctx context.Context) {
 	for {
 		before := time.Now().UTC().Add(-inboundhttp.IdempotencyWindow)
 		if _, err := a.idem.Purge(ctx, before); err != nil && ctx.Err() == nil {
-			a.log.Warn("idempotency purge failed", "error", err)
+			a.log.Warn("idempotency purge failed", "error", sanitizeErr(err))
 		}
 		select {
 		case <-ctx.Done():
