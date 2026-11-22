@@ -57,6 +57,9 @@ mqtt:
   url: tcp://mosquitto.warehouse-systems.svc.cluster.local:1883
   clientId: amr-fleet-control
 
+# carry (Task 21 review) M3: quote every value, defaults and overrides alike: Helm reads an unquoted number in a values
+# file as a float and renders a large one in exponent form (outboxIntervalMs: 1000000 becomes OUTBOX_INTERVAL_MS
+# "1e+06"), which the strict boot then refuses.
 config:
   addr: ":8080"
   logLevel: info
