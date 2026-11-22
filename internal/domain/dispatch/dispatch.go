@@ -4,6 +4,8 @@
 package dispatch
 
 import (
+	"strings"
+
 	"github.com/IQVO/amr-fleet-control/internal/domain/fleetmap"
 	"github.com/IQVO/amr-fleet-control/internal/domain/mission"
 	"github.com/IQVO/amr-fleet-control/internal/domain/robot"
@@ -35,17 +37,23 @@ func Choose(m *fleetmap.Map, pickup string, cands []Candidate) (Candidate, bool)
 	return best, found
 }
 
+// better: an if-chain (cover does not instrument the case expressions of a tagless switch), the battery compared
+// both ways (a `!=` guard before `>` made the `>=` mutant unobservable) and the key by strings.Compare (robot keys
+// of the candidates are unique, so `<` and `<=` chose alike).
 func better(length float64, c Candidate, bestLen float64, best Candidate) bool {
-	switch {
-	case length < bestLen-eps:
+	if length < bestLen-eps {
 		return true
-	case length > bestLen+eps:
-		return false
-	case c.Battery != best.Battery:
-		return c.Battery > best.Battery
-	default:
-		return c.Robot.Key() < best.Robot.Key()
 	}
+	if length > bestLen+eps {
+		return false
+	}
+	if c.Battery > best.Battery {
+		return true
+	}
+	if c.Battery < best.Battery {
+		return false
+	}
+	return strings.Compare(c.Robot.Key(), best.Robot.Key()) == -1
 }
 
 // Target is a node a route must reach, with the action to run there ("" for none).
@@ -83,10 +91,7 @@ func Plan(m *fleetmap.Map, start string, targets []Target, avoid map[string]bool
 // next node and the edge into it are free or held by self. When it stops at an element held by
 // another robot it returns that robot and the node it wanted.
 func Window(route []mission.Step, baseEnd, reached, ahead int, self string, nodeHolder, edgeHolder func(string) (string, bool)) (int, string, string) {
-	limit := reached + ahead
-	if limit > len(route)-1 {
-		limit = len(route) - 1
-	}
+	limit := min(reached+ahead, len(route)-1)
 	end := baseEnd
 	for end < limit {
 		next := route[end+1]
