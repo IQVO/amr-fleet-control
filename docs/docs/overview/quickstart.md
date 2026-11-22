@@ -107,7 +107,5 @@ testcontainers and the emulator from the LOCAL image named by `EQUIPMENT_EMULATO
 `equipment-emulator:e2e`), so build that image first (step 2). CI builds it from the pinned commit `b58201e` in the
 `integration` job.
 
-:::note
-The repository's `Makefile` is template-managed and has no `emulator-image` target yet; the `git archive v0.1.0 |
-docker build -t equipment-emulator:e2e -` line above is that target's recipe.
-:::
+`make emulator-image` runs that `git archive v0.1.0 | docker build -t equipment-emulator:e2e -` recipe (override
+`EMULATOR_DIR` if your equipment-emulator checkout is not a sibling).

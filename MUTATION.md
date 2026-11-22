@@ -3,7 +3,7 @@
 Gate: `.gremlins.yaml` (`efficacy: 99`, `mutant-coverage: 99`, plain numbers; gremlins fails when the measured value
 is <= the threshold, so every package must measure above 99.00%). The `mutation-fast` CI job runs `gremlins unleash`
 once per domain package (`./internal/domain/*/`, under `ulimit -v 4000000`); `make mutation` runs
-`./internal/domain/mission`, `make mutation-full` and the weekly `mutation` job the aggregate `./internal/domain`.
+the same per-package loop, `make mutation-full` and the weekly `mutation` job the aggregate `./internal/domain`.
 
 Measured 2026-11-21 (Task 22; gremlins v0.6.0, `workers: 1`, `timeout-coefficient: 30`, cold test cache):
 

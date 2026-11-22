@@ -33,7 +33,7 @@ never reads a database URL from the environment (`TestPostgresIntegrationTestsUs
 `.gremlins.yaml` gates at efficacy 99 and mutant coverage 99, written as plain numbers (gremlins v0.6.0 reads a
 quoted threshold as 0, so it would never gate). gremlins fails when a measured value is `<=` its threshold, so every
 package must measure above 99.00%. The `mutation-fast` CI job runs gremlins once per domain package under
-`ulimit -v 4000000`; `make mutation` runs `./internal/domain/mission`, `make mutation-full` and the weekly `mutation`
+`ulimit -v 4000000`; `make mutation` runs every domain package one by one (as CI's `mutation-fast`), `make mutation-full` and the weekly `mutation`
 job the aggregate `./internal/domain`. Measured 2026-11-21 (gremlins v0.6.0, workers 1, timeout coefficient 30, cold
 test cache):
 
@@ -60,7 +60,7 @@ removed the other equivalent shapes.
 | `make check-all` | check, coverage, arch-test, bdd |
 | `make coverage` | the 90 % gate over `internal/domain/...` and `internal/application/...` |
 | `make integration` | `go test -tags=integration ./... -race -count=1` (Docker; build the emulator image first, see [Quickstart](/docs/overview/quickstart)) |
-| `make mutation` | gremlins on `./internal/domain/mission` (`make mutation-full`: the aggregate `./internal/domain`; CI's `mutation-fast` runs every package) |
+| `make mutation` | gremlins once per domain package, as CI's `mutation-fast` (`make mutation-full`: the aggregate `./internal/domain`) |
 | `go vet -tags integration ./...` | compiles every integration test without Docker |
 
 ## CI jobs (`.github/workflows/ci.yml`)
