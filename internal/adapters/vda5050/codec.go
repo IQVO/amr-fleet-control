@@ -107,7 +107,7 @@ func DecodeState(b []byte) (vda.State, error) {
 	}
 	rep := robot.Report{At: at, OrderID: s.OrderID, OrderUpdateID: s.OrderUpdateID, LastNodeID: s.LastNodeID,
 		LastNodeSeq: s.LastNodeSequenceID, Driving: s.Driving, Pending: len(s.NodeStates)+len(s.EdgeStates) > 0,
-		Battery: s.PowerSupply.StateOfCharge, Charging: s.PowerSupply.Charging,
+		Battery: min(max(s.PowerSupply.StateOfCharge, 0), 100), Charging: s.PowerSupply.Charging, // carry (Task 13 review): the contracts publish 0-100
 		Actions: states(s.ActionStates), InstantActions: states(s.InstantActionStates)}
 	if p := s.MobileRobotPosition; p != nil {
 		rep.X, rep.Y, rep.MapID = p.X, p.Y, p.MapID

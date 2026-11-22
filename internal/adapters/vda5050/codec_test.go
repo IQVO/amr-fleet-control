@@ -134,3 +134,17 @@ func TestDecodeConnectionAndFactsheet(t *testing.T) {
 		t.Fatalf("factsheet = %+v %v", f, err)
 	}
 }
+
+// carry (Task 13 review): battery_percent is published with minimum 0 and maximum 100 (asyncapi RobotStateChanged,
+// openapi Robot), so a robot reporting a stateOfCharge outside 0-100 must not produce an event the contract (and
+// plan 04's consumer) refuses: the codec clamps it at the ACL; values inside the range pass unchanged.
+func TestDecodeStateClampsTheBatteryToZeroToHundred(t *testing.T) {
+	for raw, want := range map[string]float64{"104.2": 100, "100": 100, "-3": 0, "-0.01": 0, "0": 0, "64.5": 64.5, "99.99": 99.99} {
+		b := []byte(`{"headerId":1,"timestamp":"2026-11-20T09:00:00.000Z","version":"3.0.0","manufacturer":"EMU","serialNumber":"R1",
+		"powerSupply":{"stateOfCharge":` + raw + `,"charging":false}}`)
+		st, err := vda5050.DecodeState(b)
+		if err != nil || st.Report.Battery != want {
+			t.Errorf("stateOfCharge %s -> battery %v (%v), want %v", raw, st.Report.Battery, err, want)
+		}
+	}
+}
