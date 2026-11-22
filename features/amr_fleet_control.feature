@@ -92,3 +92,30 @@ Feature: amr-fleet-control assigns legs to robots and keeps them out of each oth
     And 91 seconds pass
     And 61 seconds pass
     Then the leg of "C1" failed with "ROBOT_OFFLINE"
+
+  # carry (Task 10 review): the acceptance rows the scenarios above leave unpinned.
+  Scenario: a second leg for a container that already has an open leg is refused at once
+    Given the example floor
+    And robot "R1" is online at "P1" with 90% battery
+    When container "C1" is requested from "ST1" to "ASRS1-IN1"
+    Then requesting container "C1" from "ST2" to "ASRS1-IN2" is refused with "container-busy"
+    And the leg of "C1" is assigned to "R1"
+    And 1 "LegAssigned" event was published for "C1"
+
+  Scenario: a robot that stops reporting leaves the fleet capacity once
+    Given the example floor
+    And robot "R1" is online at "P1" with 90% battery
+    And robot "R2" is online at "P3" with 90% battery
+    When 91 seconds pass while only robot "R1" reports
+    Then exactly 1 capacity change was published meanwhile, with 1 robot online and 1 available
+
+  Scenario: a leg from an AS/RS port to a station is driven to the end
+    Given the example floor
+    And robot "R1" is online at "P1" with 90% battery
+    When container "C3" is requested from "ASRS1-OUT1" to "ST1"
+    Then the leg of "C3" is assigned to "R1"
+    When robot "R1" drives its orders to the end
+    Then the leg of "C3" is "DONE"
+    And 1 "ContainerPickedUp" event was published for "C3"
+    And 1 "LegCompleted" event was published for "C3"
+    And 0 "LegFailed" events were published for "C3"

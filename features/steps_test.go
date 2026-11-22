@@ -266,4 +266,5 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^robot "(\w+)" charges to (\d+)%$`, w.charge)
 	sc.Step(`^robot "(\w+)" rejects its order with "([A-Z_]+)"$`, w.reject)
 	sc.Step(`^(\d+) seconds pass$`, w.pass)
+	carrySteps(sc, w) // carry (Task 10 review)
 }
