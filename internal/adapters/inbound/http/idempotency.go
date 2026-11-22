@@ -218,7 +218,7 @@ func (m *Idempotency) finishRefused(w http.ResponseWriter, r *http.Request, key,
 		err = m.Store.Save(r.Context(), rec, m.notBefore())
 	}
 	if err != nil {
-		m.Logger.WarnContext(r.Context(), "idempotency: refusal not stored", "error", err)
+		m.Logger.WarnContext(r.Context(), "idempotency: refusal not stored", "error", logSafe(err.Error()))
 		flush(w, out)
 		return
 	}
