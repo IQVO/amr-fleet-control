@@ -1,6 +1,7 @@
 package fleetmap
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ func (f *FleetMap) Cycles() [][]string {
 			cur = w.Blocker
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i][0] < out[j][0] })
+	slices.SortFunc(out, func(a, b []string) int { return strings.Compare(a[0], b[0]) })
 	return out
 }
 

@@ -1,6 +1,6 @@
 package fleetmap
 
-import "math"
+import "slices"
 
 // Path is a route: Edges[i] joins Nodes[i] and Nodes[i+1].
 type Path struct {
@@ -59,26 +59,22 @@ func rebuild(from, to string, prev map[string]link, length float64) Path {
 		nodes = append(nodes, p.to)
 		n = p.to
 	}
-	reverse(nodes)
-	reverse(edges)
+	slices.Reverse(nodes)
+	slices.Reverse(edges)
 	return Path{Nodes: nodes, Edges: edges, Length: length}
 }
 
+// closest is the unsettled node with the shortest distance; distances within eps are equal and resolve to the
+// lower id: the ids are visited in order and a later one wins only when it is nearer by more than eps.
 func closest(dist map[string]float64, done map[string]bool) (string, bool) {
 	best, found := "", false
-	for n, d := range dist {
+	for _, n := range sortedKeys(dist) {
 		if done[n] {
 			continue
 		}
-		if !found || d < dist[best]-eps || (math.Abs(d-dist[best]) <= eps && n < best) {
+		if !found || dist[n] < dist[best]-eps {
 			best, found = n, true
 		}
 	}
 	return best, found
-}
-
-func reverse(s []string) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
 }

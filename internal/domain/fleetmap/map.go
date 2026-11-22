@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
+	"strings"
 )
 
 // ErrInvalidMap is returned for a map that cannot be driven.
@@ -83,7 +85,7 @@ func New(s Spec) (*Map, error) {
 		}
 	}
 	for id, links := range m.adj {
-		sort.Slice(links, func(i, j int) bool { return links[i].to < links[j].to })
+		slices.SortFunc(links, func(a, b link) int { return strings.Compare(a.to, b.to) })
 		m.adj[id] = links
 	}
 	return m, nil
@@ -154,12 +156,7 @@ func (m *Map) addEdge(e Edge) error {
 
 func finite(f float64) bool { return !math.IsNaN(f) && !math.IsInf(f, 0) }
 
-func pairKey(a, b string) [2]string {
-	if a > b {
-		a, b = b, a
-	}
-	return [2]string{a, b}
-}
+func pairKey(a, b string) [2]string { return [2]string{min(a, b), max(a, b)} }
 
 func (m *Map) FleetID() string { return m.fleetID }
 func (m *Map) MapID() string   { return m.mapID }
