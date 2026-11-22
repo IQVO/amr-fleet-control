@@ -252,19 +252,22 @@ type mark struct {
 
 func (r *Robot) mark() mark { return mark{state: r.s.State, conn: r.s.Connection} }
 
+// derive is an if-chain, not a tagless switch: cover does not instrument case expressions, so their mutants
+// were reported NOT COVERED although every arm is tested.
 func (r *Robot) derive() State {
-	switch _, blocking := r.s.Report.Blocking(); {
-	case r.s.Connection != ConnectionOnline || r.s.Stale || !r.s.HasReport:
+	if r.s.Connection != ConnectionOnline || r.s.Stale || !r.s.HasReport {
 		return Stopped
-	case blocking:
-		return Held
-	case r.s.Report.Charging:
-		return Suspended
-	case r.s.MissionID != "":
-		return Execute
-	default:
-		return Idle
 	}
+	if _, blocking := r.s.Report.Blocking(); blocking {
+		return Held
+	}
+	if r.s.Report.Charging {
+		return Suspended
+	}
+	if r.s.MissionID != "" {
+		return Execute
+	}
+	return Idle
 }
 
 // settle derives the state, keeps HeldSince/OfflineSince and raises RobotStateChanged when the
