@@ -91,7 +91,8 @@ image named by `EQUIPMENT_EMULATOR_IMAGE`, default `equipment-emulator:e2e`:
 Unit and BDD (`features/amr_fleet_control.feature`, `make bdd`), integration (`//go:build integration`: Postgres
 repositories, the MQTT link against Mosquitto, the Kafka relay sink against Kafka, the end-to-end test against the
 emulator robots), chart tests (`charts/amr-fleet-control/tests/`: `render_test.sh`, `test_service_selectors.py`,
-`test_kong_config.py`), mutation (gremlins, thresholds in `.gremlins.yaml`, measured in Task 22).
+`test_kong_config.py`), mutation (gremlins, gate 99/99 per domain package in `.gremlins.yaml`; measured numbers and the one equivalent
+mutant in `MUTATION.md`).
 
 ## Architecture Decision Records
 

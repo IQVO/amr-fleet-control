@@ -28,10 +28,28 @@ never reads a database URL from the environment (`TestPostgresIntegrationTestsUs
 | End to end | `cmd/api/e2e_emulator_integration_test.go`: Postgres, Kafka, Mosquitto and the REAL emulator robots (`EQUIPMENT_EMULATOR_IMAGE`, default `equipment-emulator:e2e`, built from equipment-emulator `v0.1.0` / `b58201e`): a station-to-port leg, a `PICK_FAILED` `LOAD_NOT_AVAILABLE` from an empty output port, a pick from an output port after seed + `RETRIEVE`, a blocked robot failing `ROBOT_BLOCKED`, charging below the threshold, a disconnected robot leaving the online count | `make integration` |
 | Chart | `charts/amr-fleet-control/tests/render_test.sh` (the api env equals what `cmd/api` and the telemetry adapter read; the mcp/a2a env exact, both DSNs from the Secret, no Kafka or MQTT; one replica, `Recreate`, grace >= 30 s; probes; the default map is `config/map.example.yaml`; a render over a byte copy of warehouse-infra's `_platform.yaml`; every refusal), `test_service_selectors.py` (each Service selects one component), `test_kong_config.py` (routes, rewrites, plugins, no auth plugin, CORS headers and origin) | `bash charts/amr-fleet-control/tests/render_test.sh`, `python3 charts/amr-fleet-control/tests/test_*.py` (CI `chart-tests`) |
 
-:::note
-The mutation thresholds (`.gremlins.yaml`, target 99/99 efficacy and mutant coverage) are measured per package in
-Task 22; until then `.gremlins.yaml` gates at 0 and this page has no measured numbers.
-:::
+## Mutation testing
+
+`.gremlins.yaml` gates at efficacy 99 and mutant coverage 99, written as plain numbers (gremlins v0.6.0 reads a
+quoted threshold as 0, so it would never gate). gremlins fails when a measured value is `<=` its threshold, so every
+package must measure above 99.00%. The `mutation-fast` CI job runs gremlins once per domain package under
+`ulimit -v 4000000`; `make mutation` runs `./internal/domain/mission`, `make mutation-full` and the weekly `mutation`
+job the aggregate `./internal/domain`. Measured 2026-11-21 (gremlins v0.6.0, workers 1, timeout coefficient 30, cold
+test cache):
+
+| Package | Killed | Lived | Not covered | Efficacy | Mutant coverage |
+| --- | --- | --- | --- | --- | --- |
+| `fleetmap` | 56 | 0 | 0 | 100.00% | 100.00% |
+| `robot` | 48 | 0 | 0 | 100.00% | 100.00% |
+| `mission` | 115 | 1 | 0 | 99.14% | 100.00% |
+| `capacity` | 8 | 0 | 0 | 100.00% | 100.00% |
+| `dispatch` | 39 | 0 | 0 | 100.00% | 100.00% |
+| `./internal/domain` (aggregate) | 265 | 1 | 0 | 99.62% | 100.00% |
+
+The one living mutant is equivalent (`mission.go` `fits`, `dr > pick` to `dr >= pick`: a pick and a drop never
+share a step). The aggregate also timed one runaway-loop mutant out locally (`route.go:35`), which CI's memory cap
+kills. `MUTATION.md` at the repository root lists both, with the proof, and the behaviour-preserving rewrites that
+removed the other equivalent shapes.
 
 ## Gates
 
@@ -42,7 +60,7 @@ Task 22; until then `.gremlins.yaml` gates at 0 and this page has no measured nu
 | `make check-all` | check, coverage, arch-test, bdd |
 | `make coverage` | the 90 % gate over `internal/domain/...` and `internal/application/...` |
 | `make integration` | `go test -tags=integration ./... -race -count=1` (Docker; build the emulator image first, see [Quickstart](/docs/overview/quickstart)) |
-| `make mutation` | gremlins on the fast package set (`mutation-full` for all) |
+| `make mutation` | gremlins on `./internal/domain/mission` (`make mutation-full`: the aggregate `./internal/domain`; CI's `mutation-fast` runs every package) |
 | `go vet -tags integration ./...` | compiles every integration test without Docker |
 
 ## CI jobs (`.github/workflows/ci.yml`)
