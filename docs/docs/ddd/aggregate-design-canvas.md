@@ -15,7 +15,7 @@ description: "FleetMap, Robot and Mission: the six invariants, which aggregate e
 | 2 | A node or edge in a released base is reserved by exactly one robot. | `fleetmap.FleetMap.Reserve` (all or nothing; refuses an element another robot holds), `Retain`, `ReleaseRobot`. |
 | 3 | `orderUpdateId` only increases within one order. | `mission.Mission.Extend` and `Reroute` (+1 each; `Resent` keeps it). |
 | 4 | A robot below the charge threshold is never assigned a leg. | `robot.Robot.Assignable(low)`; the scheduler assigns legs only to `dispatch.Choose` candidates built from assignable robots. |
-| 5 | Every mission is pinned to one map version. | `mission.NewLeg` / `NewInternal` require it; `fleetmap.Rehydrate` refuses reservations of another version; `Recover` ends missions of a retired version. |
+| 5 | Every mission is pinned to one map version. | `mission.NewLeg` / `NewInternal` require it; `usecases.load` drops the stored reservations of another map version (`fleetmap.Rehydrate` refuses unknown nodes and edges); `Recover` ends missions of a retired version. |
 | 6 | Every accepted leg ends in exactly one of `LegCompleted` or `LegFailed`, with a reason. | `mission.Mission` transitions: `Complete`, `Fail`, `RequestCancel` (queued), `ConfirmCancel` refuse an ended mission; `Fail` requires a reason. |
 
 ## FleetMap (`internal/domain/fleetmap`)
