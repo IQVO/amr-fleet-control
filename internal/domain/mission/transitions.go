@@ -38,9 +38,7 @@ func (m *Mission) Resent(at time.Time) {
 
 // Seen records an orderUpdateId a robot state showed; only the highest counts.
 func (m *Mission) Seen(updateID uint32) {
-	if int64(updateID) > m.s.SeenUpdate {
-		m.s.SeenUpdate = int64(updateID)
-	}
+	m.s.SeenUpdate = max(m.s.SeenUpdate, int64(updateID))
 }
 
 // Extend releases the route up to newEnd: the next order update (responsibility 3).
@@ -87,9 +85,7 @@ func (m *Mission) Progress(index int) error {
 	if index < 0 || index > m.s.BaseEnd {
 		return fmt.Errorf("%w: index %d outside the base 0..%d", ErrInvalidMission, index, m.s.BaseEnd)
 	}
-	if index > m.s.Reached {
-		m.s.Reached = index
-	}
+	m.s.Reached = max(m.s.Reached, index)
 	return nil
 }
 
@@ -105,12 +101,12 @@ func (m *Mission) PickUp(at, robotAt time.Time) ([]any, error) {
 
 // Complete ends a picked-up leg (drop FINISHED) or an internal mission.
 func (m *Mission) Complete(at, robotAt time.Time) ([]any, error) {
-	switch {
-	case m.s.Kind == Leg && m.s.Status == PickedUp:
+	if m.s.Kind == Leg && m.s.Status == PickedUp { // an if-chain: cover does not instrument tagless-switch cases
 		m.end(Done, at)
 		return []any{LegCompleted{LegID: m.s.ID, ContainerID: m.s.ContainerID, To: m.s.To, Reference: m.s.Reference,
 			Robot: m.s.Robot, At: at, RobotTime: robotAt}}, nil
-	case m.s.Kind != Leg && m.s.Status == Assigned:
+	}
+	if m.s.Kind != Leg && m.s.Status == Assigned {
 		m.end(Done, at)
 		return nil, nil
 	}
