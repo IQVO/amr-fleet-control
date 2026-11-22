@@ -46,8 +46,11 @@ func (r *Missions) Update(ctx context.Context, m *mission.Mission) error {
 	if err != nil {
 		return err
 	}
-	_, err = exec(ctx, r.pool, `UPDATE missions SET status = $2, open = $3, state = $4, updated_at = now() WHERE mission_id = $1`,
+	tag, err := exec(ctx, r.pool, `UPDATE missions SET status = $2, open = $3, state = $4, updated_at = now() WHERE mission_id = $1`,
 		m.ID(), string(m.Status()), m.Open(), b)
+	if err == nil && tag.RowsAffected() == 0 { // carry (Task 12 review): never a silent success for an unknown id
+		return fmt.Errorf("%w: %s", ports.ErrLegNotFound, m.ID())
+	}
 	return err
 }
 

@@ -159,3 +159,21 @@ func TestAnAfterCommitRegisteredInsideAHookRunsExactlyOnce(t *testing.T) {
 		t.Fatalf("err = %v, nested hook ran %d times, want 1", err, nested)
 	}
 }
+
+// carry (Task 12 review): Missions.Update of an id never inserted is ErrLegNotFound (the Postgres adapter answers the
+// same when its UPDATE touches no row), never a silent upsert of a mission the unit of work did not load.
+func TestMissionsUpdateRefusesAnUnknownID(t *testing.T) {
+	s := memory.NewStore()
+	missions, ctx := memory.NewMissions(s), context.Background()
+	if err := missions.Update(ctx, leg("leg-9", "C9")); !errors.Is(err, ports.ErrLegNotFound) {
+		t.Fatalf("Update of an unknown mission = %v, want ErrLegNotFound", err)
+	}
+	if _, err := missions.Get(ctx, "leg-9"); !errors.Is(err, ports.ErrLegNotFound) {
+		t.Fatalf("the refused Update stored leg-9: %v", err)
+	}
+	a := leg("leg-1", "C1")
+	_ = missions.Insert(ctx, a)
+	if err := missions.Update(ctx, a); err != nil {
+		t.Fatalf("Update of an inserted mission = %v", err)
+	}
+}

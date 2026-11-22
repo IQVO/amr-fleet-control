@@ -81,9 +81,17 @@ func (r *Missions) Insert(_ context.Context, m *mission.Mission) error {
 	return err
 }
 
+// Update refuses an id never inserted with ErrLegNotFound, like the Postgres adapter. carry (Task 12 review)
 func (r *Missions) Update(_ context.Context, m *mission.Mission) error {
-	r.s.with(func(t *tables) { t.missions[m.ID()] = m.State() })
-	return nil
+	var err error
+	r.s.with(func(t *tables) {
+		if _, ok := t.missions[m.ID()]; !ok {
+			err = fmt.Errorf("%w: %s", ports.ErrLegNotFound, m.ID())
+			return
+		}
+		t.missions[m.ID()] = m.State()
+	})
+	return err
 }
 
 func (r *Missions) Get(_ context.Context, id string) (*mission.Mission, error) {

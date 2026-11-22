@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	// ErrLegNotFound is answered by Missions.Get for an unknown mission id.
+	// ErrLegNotFound is answered by Missions.Get and Missions.Update for an unknown mission id.
 	ErrLegNotFound = errors.New("leg not found")
 	// ErrRobotNotFound is answered by Robots.Get for a robot never seen.
 	ErrRobotNotFound = errors.New("robot not found")
