@@ -55,7 +55,7 @@ other variable and its default is in `docs/docs/operations/configuration.md`. `c
 ## Observability
 
 OpenTelemetry traces and metrics over OTLP/gRPC (`OTEL_EXPORTER_OTLP_ENDPOINT`; empty = off), `trace_id`/`span_id`
-on every JSON log line, and the counter `amr_fleet_control.legs.ended` (ADR 0005).
+on every JSON log line written under a span, and the counter `amr_fleet_control.legs.ended` (ADR 0005).
 
 ## API
 
