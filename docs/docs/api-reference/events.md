@@ -72,8 +72,6 @@ Example (Leg leg-7f3a (container C-0001, ST1 to ASRS1-IN1) assigned to EMU/R1):
 }
 ```
 
-`x-no-consumer-reason`: pending: material-flow-control (WCS plan 04) is the intended consumer; its asyncapi declares this type when it is built, and this reason is deleted in that wave.
-
 ## ContainerPickedUp
 
 The robot's pick action finished at the leg's from handoff point; the container is on the robot. `type` = `com.warehouse.wes.amr-fleet-control.mission.ContainerPickedUp`; subject = the leg id. material-flow-control confirms an AS/RS port pickup to asrs-control with it (decision D15).
@@ -105,8 +103,6 @@ Example (C-0001 left station ST1 on EMU/R1):
   }
 }
 ```
-
-`x-no-consumer-reason`: pending: material-flow-control (WCS plan 04) is the intended consumer; its asyncapi declares this type when it is built, and this reason is deleted in that wave.
 
 ## LegCompleted
 
@@ -140,11 +136,9 @@ Example (C-0001 dropped at ASRS1-IN1):
 }
 ```
 
-`x-no-consumer-reason`: pending: material-flow-control (WCS plan 04) is the intended consumer; its asyncapi declares this type when it is built, and this reason is deleted in that wave.
-
 ## LegFailed
 
-The leg ended without its drop, or was cancelled; the other outcome of every accepted leg. `type` = `com.warehouse.wes.amr-fleet-control.mission.LegFailed`; subject = the leg id. exception-management opens a case for reason ROBOT_BLOCKED. `container_on_robot` is true when the leg failed after the pickup.
+The leg ended without its drop, or was cancelled; the other outcome of every accepted leg. `type` = `com.warehouse.wes.amr-fleet-control.mission.LegFailed`; subject = the leg id. material-flow-control retries or fails the transport with it; exception-management (WCS plan 05, not built yet) is intended to open a case for reason ROBOT_BLOCKED. `container_on_robot` is true when the leg failed after the pickup.
 
 Example (The container was not at ST1):
 
@@ -175,8 +169,6 @@ Example (The container was not at ST1):
   }
 }
 ```
-
-`x-no-consumer-reason`: pending: material-flow-control (WCS plan 04) and exception-management (WCS plan 05, reason ROBOT_BLOCKED) are the intended consumers; deleted when the first of them declares this type.
 
 ## RobotStateChanged
 
@@ -245,8 +237,6 @@ Example (One of three robots went offline):
   }
 }
 ```
-
-`x-no-consumer-reason`: pending: material-flow-control (WCS plan 04) is the intended consumer; its asyncapi declares this type when it is built, and this reason is deleted in that wave.
 
 ## DeadlockDetected
 
