@@ -65,7 +65,7 @@ flowchart LR
 | Assignment | a leg is queued, a robot becomes assignable | the next queued leg (acceptance order) goes to the nearest assignable robot (route length, battery, key) |
 | Release-ahead | a robot acknowledged its order or reached a node | extend the base up to `RELEASE_AHEAD_NODES` past it if the stretch can be reserved, else wait at the base end |
 | Mission tracking | a state shows the leg's actions | pick FINISHED -> picked up; drop FINISHED -> done; FAILED -> `PICK_FAILED` / `DROP_FAILED`; `FATAL` -> `ROBOT_FAULT` |
-| Resend | an order or a `cancelOrder` / `stopCharging` stays unanswered for `ORDER_RESEND_AFTER` | send it again with the same id; after `ORDER_RESEND_LIMIT`, fail the leg `ORDER_REJECTED` (a cancel: end it `CANCELLED`) |
+| Resend | an order or a `cancelOrder` / `stopCharging` stays unanswered for `ORDER_RESEND_AFTER` | send it again with the same id; after `ORDER_RESEND_LIMIT` an order fails its leg `ORDER_REJECTED` and a `CANCEL_REQUESTED` leg's own cancel ends the leg `CANCELLED` (a robot still reporting the order pending gets a `recover-` cancel); `recover-`, failed-leg and other unowned cancels and `stopCharging` are re-sent with no limit until answered (or, for a cancel, until no order is pending) |
 | Timeout | a robot is `STOPPED` / `HELD` too long | fail its leg `ROBOT_OFFLINE` / `ROBOT_BLOCKED` |
 | Deadlock | a new wait-for cycle | publish `DeadlockDetected` once, re-route the youngest mission; past `DEADLOCK_TIMEOUT` fail it `ROBOT_BLOCKED` |
 | Re-route | a robot waited `REROUTE_AFTER` | plan a new horizon around nodes others hold |

@@ -37,7 +37,7 @@ Source: `cmd/api/config.go` (`loadConfig`), `usecases.DefaultConfig`, `usecases.
 | `NODE_TOLERANCE_METRES` | `0.25` | A robot with no `lastNodeId` stands on the nearest node within this distance; a finite number > 0. |
 | `ROBOT_STALE_AFTER_SECONDS` | `90` | No `state` (or `connection`) for this long makes a robot stale, so `STOPPED`; an integer >= 1. |
 | `ORDER_RESEND_AFTER_SECONDS` | `5` | An unacknowledged order (or an unanswered `cancelOrder`/`stopCharging`) is sent again after this; an integer >= 1. |
-| `ORDER_RESEND_LIMIT` | `3` | Resends before an unacknowledged order fails its leg `ORDER_REJECTED` (a `cancelOrder` ends its leg `CANCELLED`); an integer >= 1. |
+| `ORDER_RESEND_LIMIT` | `3` | Resends before an unacknowledged order fails its leg `ORDER_REJECTED`, and before a `CANCEL_REQUESTED` leg's own unanswered `cancelOrder` ends the leg `CANCELLED`. Other cancels (`recover-`, a failed leg's, any cancel no open leg owns) and `stopCharging` are re-sent with no limit; an integer >= 1. |
 | `REROUTE_AFTER_SECONDS` | `10` | A robot waiting this long for a node another robot holds is re-routed; an integer >= 1. |
 | `DEADLOCK_TIMEOUT_SECONDS` | `60` | A wait-for cycle older than this fails its youngest leg `ROBOT_BLOCKED`; an integer >= 1. |
 | `ROBOT_BLOCKED_TIMEOUT_SECONDS` | `60` | A robot `HELD` longer than this fails its leg `ROBOT_BLOCKED`; an integer >= 1. |
