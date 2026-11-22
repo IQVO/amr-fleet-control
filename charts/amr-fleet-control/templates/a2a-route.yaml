@@ -1,4 +1,5 @@
-{{- if and .Values.a2a.enabled .Values.a2a.route.enabled -}}
+{{- if and .Values.gatewayApi.enabled .Values.a2a.enabled .Values.a2a.route.enabled -}}
+{{- /* ruling Note C: gatewayApi.enabled gates every HTTPRoute, like the api route (material-flow-control parity). */ -}}
 {{- /*
 /api/a2a/amr-fleet-control -> Service amr-fleet-control-a2a:8093, prefix rewritten to /. /healthz stays
 off the host. Nothing on the route checks credentials (fleet rule).

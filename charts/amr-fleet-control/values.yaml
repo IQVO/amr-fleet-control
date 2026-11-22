@@ -141,6 +141,7 @@ mcp:
     type: ClusterIP
     port: 8090
     targetPort: 8090
+  # ruling Note C: rendered only with gatewayApi.enabled too (like the api route).
   route:
     enabled: false
     path: "/api/mcp/amr-fleet-control"
@@ -162,6 +163,7 @@ a2a:
     type: ClusterIP
     port: 8093
     targetPort: 8093
+  # ruling Note C: rendered only with gatewayApi.enabled too (like the api route).
   route:
     enabled: false
     path: "/api/a2a/amr-fleet-control"

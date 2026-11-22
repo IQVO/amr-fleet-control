@@ -1,4 +1,5 @@
-{{- if and .Values.mcp.enabled .Values.mcp.route.enabled -}}
+{{- if and .Values.gatewayApi.enabled .Values.mcp.enabled .Values.mcp.route.enabled -}}
+{{- /* ruling Note C: gatewayApi.enabled gates every HTTPRoute, like the api route (material-flow-control parity). */ -}}
 {{- /*
 /api/mcp/amr-fleet-control -> Service amr-fleet-control-mcp:8090, prefix rewritten to /mcp. /healthz stays
 off the host. Nothing on the route checks credentials (fleet rule).

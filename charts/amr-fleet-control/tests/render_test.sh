@@ -164,6 +164,14 @@ own="$(helm template amr-fleet-control "$chart_dir" -f "$fx/platform-values.yaml
 python3 -c 'import sys, yaml
 refs = [d["spec"]["parentRefs"] for d in yaml.safe_load_all(sys.stdin) if d]
 assert [[r["name"] for r in rs] for rs in refs] == [["mcp-gw"], ["a2a-gw"]], refs' <<<"$own" || fail "mcp/a2a routes ignore their own parentRefs"
+# ruling Note C: gatewayApi.enabled gates every HTTPRoute, the mcp and a2a routes too (material-flow-control parity):
+# with it off, mcp.route.enabled / a2a.route.enabled render no route.
+routes_off="$(helm template amr-fleet-control "$chart_dir" "${all[@]}" --set gatewayApi.enabled=false)" \
+  || fail "the all-components render with gatewayApi.enabled=false fails"
+[ "$(grep -c '^kind: HTTPRoute' <<<"$routes_off")" = 0 ] \
+  || fail "gatewayApi.enabled=false still renders $(grep -c '^kind: HTTPRoute' <<<"$routes_off") HTTPRoute(s)"
+[ "$(helm template amr-fleet-control "$chart_dir" "${all[@]}" | grep -c '^kind: HTTPRoute')" = 3 ] \
+  || fail "the all-components render must carry the api, mcp and a2a HTTPRoutes"
 # The guards: an enabled cors plugin needs an origin (never "*"), an enabled opentelemetry plugin a traces endpoint.
 render --set kongPlugins.cors.enabled=true >/dev/null 2>&1 && fail "cors enabled without an origin rendered"
 render --set kongPlugins.cors.enabled=true --set kongPlugins.cors.origin='*' >/dev/null 2>&1 && fail "cors origin '*' rendered"
