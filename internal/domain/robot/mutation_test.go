@@ -31,6 +31,9 @@ func TestAConnectionChangeAloneIsPublishedAndARepeatIsNot(t *testing.T) {
 	if e.State != robot.Stopped || e.Previous != robot.Stopped || e.Connection != robot.ConnectionBroken {
 		t.Fatalf("OFFLINE -> CONNECTION_BROKEN = %+v, want STOPPED/STOPPED/CONNECTION_BROKEN", e)
 	}
+	if !r.OfflineSince().Equal(t0.Add(time.Minute)) { // robot.go settle: a robot staying STOPPED keeps OfflineSince
+		t.Fatalf("OfflineSince = %v, want the first STOPPED at %v", r.OfflineSince(), t0.Add(time.Minute))
+	}
 	if evs := r.ApplyConnection(robot.ConnectionBroken, t0.Add(3*time.Minute), time.Time{}); len(evs) != 0 {
 		t.Fatalf("a repeated CONNECTION_BROKEN raised %+v", evs)
 	}
