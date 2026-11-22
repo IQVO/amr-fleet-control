@@ -122,8 +122,8 @@ func (m *Mission) Fail(reason Reason, robotError string, at time.Time) ([]any, e
 	if !m.Open() {
 		return nil, fmt.Errorf("%w: %s is %s", ErrLegEnded, m.s.ID, m.s.Status)
 	}
-	if reason == "" {
-		return nil, fmt.Errorf("%w: a failure needs a reason", ErrInvalidMission)
+	if !failureReason(reason) { // carry (Task 5 review): CANCELLED and off-list reasons are refused
+		return nil, fmt.Errorf("%w: a failure needs a reason of the published list, got %q", ErrInvalidMission, reason)
 	}
 	onRobot := m.s.Status == PickedUp
 	m.s.Reason, m.s.RobotError = reason, robotError
@@ -132,6 +132,17 @@ func (m *Mission) Fail(reason Reason, robotError string, at time.Time) ([]any, e
 		return nil, nil
 	}
 	return []any{m.failed(onRobot, at)}, nil
+}
+
+// failureReason reports whether Fail may end a mission with r: the failure reasons of decision D16. CANCELLED is
+// the outcome of RequestCancel and ConfirmCancel only. carry (Task 5 review)
+func failureReason(r Reason) bool {
+	switch r {
+	case ReasonRobotBlocked, ReasonRobotFault, ReasonRobotOffline, ReasonOrderRejected, ReasonPickFailed, ReasonDropFailed,
+		ReasonMapVersionRetired:
+		return true
+	}
+	return false
 }
 
 // RequestCancel cancels a queued leg at once, asks the robot for an assigned one, and refuses a
