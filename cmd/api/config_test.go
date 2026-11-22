@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -128,5 +131,29 @@ func TestAZeroOrInvalidSettingIsABootErrorNamingIt(t *testing.T) {
 	if c, err := loadConfig(env(m)); err != nil || c.OutboxInterval != time.Millisecond || c.OutboxBatch != 1 || c.OutboxMaxAttempts != 1 ||
 		c.Policy.ResendLimit != 1 {
 		t.Fatalf("the smallest valid values = %+v %v", c, err)
+	}
+}
+
+// carry (Task 16/18/20 review): cmd/api reads LOG_LEVEL through telemetry.ParseLogLevel like cmd/mcp and cmd/a2a
+// (plan 04 parity): unset is info; set, it is trimmed and case-insensitive; a set-but-unknown value is a boot error
+// naming LOG_LEVEL, never a silent info.
+func TestLogLevelIsParsedAndASetButUnknownValueIsABootError(t *testing.T) {
+	base := map[string]string{"DATABASE_URL": "postgres://x", "KAFKA_BROKERS": "127.0.0.1:9092", "MQTT_URL": "tcp://127.0.0.1:1883", "AMR_MAP_FILE": "/m.yaml"}
+	for level, ok := range map[string]bool{"": true, "debug": true, "DEBUG": true, "\tWarn\n": true, "warning": true, "error": true,
+		"info": true, "verbose": false, "trace": false, "0": false} {
+		m := map[string]string{"LOG_LEVEL": level}
+		for k, v := range base {
+			m[k] = v
+		}
+		_, err := loadConfig(env(m))
+		if ok != (err == nil) || (!ok && !strings.Contains(err.Error(), "LOG_LEVEL")) {
+			t.Errorf("LOG_LEVEL=%q: err = %v, want accepted=%v", level, err, ok)
+		}
+	}
+	for level, want := range map[string]slog.Level{"DEBUG": slog.LevelDebug, "\tWarn\n": slog.LevelWarn, "ERROR": slog.LevelError, "info": slog.LevelInfo} {
+		log := newLoggerTo(io.Discard, level)
+		if !log.Enabled(context.Background(), want) || log.Enabled(context.Background(), want-1) {
+			t.Errorf("newLoggerTo(%q) is not at %v", level, want)
+		}
 	}
 }

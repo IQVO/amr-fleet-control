@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/postgres"
+	"github.com/IQVO/amr-fleet-control/internal/adapters/outbound/telemetry"
 	"github.com/IQVO/amr-fleet-control/internal/application/usecases"
 )
 
@@ -102,6 +103,9 @@ func loadConfig(getenv func(string) string) (config, error) {
 		}
 	}
 	problems = append(problems, r.errs...)
+	if _, err := telemetry.ParseLogLevel(c.LogLevel); err != nil {
+		problems = append(problems, err) // carry (Task 16 review): a set-but-unknown LOG_LEVEL is a boot error, never a silent info
+	}
 	if err := c.Policy.Validate(); err != nil {
 		problems = append(problems, err)
 	}
