@@ -17,8 +17,9 @@ import (
 // connection is selected on a *pgxpool.Pool value, except pool.BeginTx inside begin() itself.
 //
 // A parse-only sensor (no type check): a value counts as a pool when it is a field, parameter, result or variable
-// declared as *<pgxpool>.Pool anywhere in the package, or a local assigned from one; a selector on such a name is
-// judged by its method name.
+// declared as *<pgxpool>.Pool anywhere in the package, or a local assigned (`x := p`, `x = p`, `var x = p`) from
+// one; a selector on such a name is judged by its method name. carry (Task 20 review): a pool value may flow only
+// where it stays a pool (poolFlowViolations), never into an interface, a non-pool parameter or a typed var.
 var pgPoolRefusedMethods = []string{"Exec", "Query", "QueryRow", "SendBatch", "CopyFrom", "Acquire", "AcquireFunc",
 	"AcquireAllIdle", "Begin", "BeginTx"}
 
@@ -88,12 +89,12 @@ func propagatePoolLocals(files []*ast.File, names map[string]bool) bool {
 	changed := false
 	for _, f := range files {
 		ast.Inspect(f, func(n ast.Node) bool {
-			as, ok := n.(*ast.AssignStmt)
-			if !ok || len(as.Lhs) != len(as.Rhs) {
+			lhs, rhs := assignedPairs(n)
+			if len(lhs) != len(rhs) {
 				return true
 			}
-			for i, rhs := range as.Rhs {
-				if id, isIdent := as.Lhs[i].(*ast.Ident); isIdent && !names[id.Name] && isPoolExpr(rhs, names) {
+			for i, r := range rhs {
+				if id, isIdent := lhs[i].(*ast.Ident); isIdent && !names[id.Name] && isPoolExpr(r, names) {
 					names[id.Name], changed = true, true
 				}
 			}
@@ -101,6 +102,20 @@ func propagatePoolLocals(files []*ast.File, names map[string]bool) bool {
 		})
 	}
 	return changed
+}
+
+// assignedPairs returns the targets and values of an assignment, or of an untyped var spec. carry (Task 20
+// review): `var db = r.pool` makes db a pool; a typed spec (`var q querier = r.pool`) is judged by poolFlowViolations.
+func assignedPairs(n ast.Node) (lhs, rhs []ast.Expr) {
+	switch d := n.(type) {
+	case *ast.AssignStmt:
+		return d.Lhs, d.Rhs
+	case *ast.ValueSpec:
+		if d.Type == nil {
+			return identExprs(d.Names), d.Values
+		}
+	}
+	return nil, nil
 }
 
 // isPoolExpr: an identifier or a field selector (r.pool) whose name is a pool name.
@@ -139,6 +154,7 @@ func poolBypassViolations(fset *token.FileSet, files []*ast.File) (violations []
 			})
 		}
 	}
+	violations = append(violations, poolFlowViolations(fset, files, names)...) // carry (Task 20 review)
 	return violations, allowed
 }
 
@@ -177,7 +193,8 @@ func TestPostgresAdapterNeverBypassesBegin(t *testing.T) {
 
 const poolFixturePrelude = "package postgres\n\nimport (\n\t\"context\"\n\n\t\"github.com/jackc/pgx/v5/pgxpool\"\n)\n\n" +
 	"type Fleets struct{ pool *pgxpool.Pool }\n\n" +
-	"func begin(ctx context.Context, pool *pgxpool.Pool) error { _, err := pool.BeginTx(ctx, txOptions(pool)); return err }\n\n"
+	"func begin(ctx context.Context, pool *pgxpool.Pool) error { _, err := pool.BeginTx(ctx, txOptions(pool)); return err }\n\n" +
+	"func txOptions(pool *pgxpool.Pool) any { return nil }\n\n" // carry (Task 20 review): helpers are judged by their declared parameters
 
 func poolFixtureViolations(t *testing.T, src string) ([]string, int) {
 	t.Helper()
