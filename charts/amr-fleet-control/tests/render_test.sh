@@ -200,4 +200,15 @@ for c in api mcp a2a; do
   got="$(env_of "$c" --set environment=staging)"; [ "$got" = staging ] || fail "$c ENVIRONMENT is '$got' with environment=staging"
 done
 render --set 'extraEnv[0].name=ENVIRONMENT' --set 'extraEnv[0].value=x' >/dev/null 2>&1 && fail "renders an ENVIRONMENT extraEnv"
+# carry (Task 21 review) M2: mcp.extraEnv and a2a.extraEnv are refused the same names (the require helper ranges over all
+# three lists), so no surface gets a duplicate DATABASE_URL literal over the Secret. A harmless name still renders.
+for c in mcp a2a; do
+  for name in DATABASE_URL MIGRATIONS_DATABASE_URL; do
+    err="$(helm template amr-fleet-control "$chart_dir" "${all[@]}" --set "$c.extraEnv[0].name=$name" --set "$c.extraEnv[0].value=x" 2>&1 >/dev/null)" \
+      && fail "renders a $name $c.extraEnv"
+    grep -q "extraEnv must not set $name" <<<"$err" || fail "$c.extraEnv $name refused for another reason: $err"
+  done
+  helm template amr-fleet-control "$chart_dir" "${all[@]}" --set "$c.extraEnv[0].name=FOO" --set "$c.extraEnv[0].value=x" \
+    --show-only "templates/$c-deployment.yaml" | grep -q 'name: FOO$' || fail "a harmless $c.extraEnv is not rendered"
+done
 echo "render_test: PASS"

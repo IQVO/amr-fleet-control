@@ -133,7 +133,8 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if and .Values.kongPlugins.opentelemetry.enabled (not .Values.kongPlugins.opentelemetry.tracesEndpoint) }}
 {{- fail "kongPlugins.opentelemetry.enabled needs kongPlugins.opentelemetry.tracesEndpoint (warehouse-infra's _platform.yaml supplies it)" }}
 {{- end }}
-{{- range .Values.extraEnv }}
+{{- /* carry (Task 21 review) M2: the per-surface lists too, so mcp/a2a cannot override the Secret DSN with a literal. */ -}}
+{{- range concat (.Values.extraEnv | default list) (.Values.mcp.extraEnv | default list) (.Values.a2a.extraEnv | default list) }}
 {{- if or (hasSuffix "_MODE" .name) (eq .name "OTEL_EXPORTER_OTLP_ENDPOINT") (eq .name "OTEL_SERVICE_NAME") (eq .name "DATABASE_URL") (eq .name "MIGRATIONS_DATABASE_URL") (eq .name "ENVIRONMENT") }}
 {{- fail (printf "extraEnv must not set %s: the chart renders it (or it does not exist)" .name) }}
 {{- end }}
