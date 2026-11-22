@@ -41,10 +41,9 @@ func Compute(robots []*robot.Robot, low float64, missions []*mission.Mission, at
 		if !m.External() {
 			continue
 		}
-		switch {
-		case m.Status() == mission.Queued:
+		if m.Status() == mission.Queued { // an if-chain: cover does not instrument tagless-switch cases
 			s.LegsQueued++
-		case m.Active():
+		} else if m.Active() {
 			s.LegsActive++
 		}
 	}
