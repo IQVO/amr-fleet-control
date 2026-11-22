@@ -23,7 +23,7 @@ Source: `cmd/api/config.go` (`loadConfig`), `usecases.DefaultConfig`, `usecases.
 | `MQTT_CLIENT_ID` | `amr-fleet-control` | The link's MQTT client id. |
 | `AMR_MAP_FILE` | required | The map YAML (below). |
 | `ADDR` | `:8080` | The HTTP listen address; bound before anything else is wired, so a busy address is the boot error. |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`/`warning` or `error`. |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`/`warning`, `error`, any case (`telemetry.ParseLogLevel`); any other value is a boot error. |
 | `OTEL_SERVICE_NAME` | `amr-fleet-control` | `service.name`; also names the otelchi spans and HTTP metric series. |
 | `SERVICE_VERSION` | `dev` (when empty) | `service.version`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty = telemetry off | OTLP/gRPC endpoint URL of the Collector (ADR 0005). |
@@ -42,12 +42,6 @@ Source: `cmd/api/config.go` (`loadConfig`), `usecases.DefaultConfig`, `usecases.
 | `DEADLOCK_TIMEOUT_SECONDS` | `60` | A wait-for cycle older than this fails its youngest leg `ROBOT_BLOCKED`; an integer >= 1. |
 | `ROBOT_BLOCKED_TIMEOUT_SECONDS` | `60` | A robot `HELD` longer than this fails its leg `ROBOT_BLOCKED`; an integer >= 1. |
 | `ROBOT_OFFLINE_TIMEOUT_SECONDS` | `60` | A robot `STOPPED` longer than this fails its leg `ROBOT_OFFLINE`; an integer >= 1. |
-
-:::note
-`cmd/api` does not validate `LOG_LEVEL` yet: an unknown value (or a value in another case, such as `DEBUG`) silently
-logs at `info`. `cmd/mcp` and `cmd/a2a` already refuse it at boot; `cmd/api` switches to the same
-`telemetry.ParseLogLevel` rule in Task 22.
-:::
 
 ## cmd/mcp
 
@@ -76,7 +70,7 @@ Source: `cmd/a2a/main.go` (`loadBootConfig`), `cmd/a2a/telemetry.go`.
 | `DATABASE_URL` | required | As for `cmd/mcp` (read-only pool). |
 | `MIGRATIONS_DATABASE_URL` | `DATABASE_URL` | As for `cmd/mcp`. |
 | `AMR_MAP_FILE` | required | As for `cmd/mcp`. |
-| `LOG_LEVEL` | `info` | As for `cmd/mcp` (validated). |
+| `LOG_LEVEL` | `info` | As for `cmd/api` and `cmd/mcp`. |
 | `OTEL_SERVICE_NAME` | `amr-fleet-control-a2a` | `service.name`. |
 | `SERVICE_VERSION` | `dev` (when empty) | `service.version` and the card's `version`. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty = telemetry off | As for `cmd/api`. |
