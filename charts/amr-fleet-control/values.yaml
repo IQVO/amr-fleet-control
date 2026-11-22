@@ -173,6 +173,12 @@ a2a:
     limits: {cpu: 250m, memory: 128Mi}
     requests: {cpu: 25m, memory: 32Mi}
 
+# carry (Task 21 review): capacity step 3 (warehouse-infra ADR 0012): true (with mcp.enabled and a2a.enabled) runs
+# cmd/mcp and cmd/a2a as two containers of one <release>-agents Deployment. Off by default; warehouse-infra switches it on.
+agents:
+  colocate: false
+  strategy: {}   # {} = k8s default (RollingUpdate); {type: Recreate} only when no surge slot is free
+
 # Kong plugins owned by this chart (fleet decision 2026-10-13), attached to every enabled HTTPRoute.
 # All default off; warehouse-infra switches them on and its _platform.yaml supplies cors.origin and
 # opentelemetry.tracesEndpoint (the keys every sibling chart reads). The chart refuses an enabled cors without an

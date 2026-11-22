@@ -23,6 +23,15 @@
 {{- printf "%s-a2a" (include "amr-fleet-control.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{/* carry (Task 21 review): agents.colocate (warehouse-infra ADR 0012): "true" iff colocate, mcp and a2a are all on; else empty. */}}
+{{- define "amr-fleet-control.agentsColocated" -}}
+{{- if and (.Values.agents | default dict).colocate .Values.mcp.enabled .Values.a2a.enabled }}true{{ end -}}
+{{- end }}
+
+{{- define "amr-fleet-control.agentsFullname" -}}
+{{- printf "%s-agents" (include "amr-fleet-control.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
 {{- define "amr-fleet-control.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "amr-fleet-control.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}

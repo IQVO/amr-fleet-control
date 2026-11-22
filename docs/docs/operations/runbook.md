@@ -55,7 +55,7 @@ rolling update: two processes would both send orders and reserve nodes.
 The chart enforces it: it refuses to render a `replicaCount` other than 1 for the api component, the api Deployment
 uses strategy `Recreate`, and `terminationGracePeriodSeconds` defaults to 45 (the stop sequence is bounded at about
 20 s; the chart refuses less than 30). `cmd/mcp` and `cmd/a2a` are read-only and may scale (`mcp.replicaCount`,
-`a2a.replicaCount`).
+`a2a.replicaCount`; with `agents.colocate` they share one pod and scale together by `mcp.replicaCount`).
 
 ## What a restart does
 

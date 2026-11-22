@@ -150,3 +150,12 @@ test) unless the value `map` holds a whole map file as a string (`--set-file map
 YAML mapping, because Helm parses values as YAML 1.1 and reads the node key `y` as the boolean `true`. The chart sets
 every other variable on this page from its values (`config.*`, `kafka.brokers`, `mqtt.*`, `otel.*`, `environment`)
 and both database URLs from a Secret.
+
+`mcp.enabled` and `a2a.enabled` (default false) add the read-only `cmd/mcp` and `cmd/a2a` Deployments and Services
+(8090, 8093). `agents.colocate` (default false; capacity step 3, warehouse-infra ADR 0012) with both `mcp.enabled` and
+`a2a.enabled` renders ONE `<release>-agents` Deployment with the two containers `mcp` (:8090) and `a2a` (:8093) instead
+of the two standalone Deployments: same binaries, env, probes and resources, port names `mcp` / `a2a`. The
+`<release>-mcp` and `<release>-a2a` Services keep their names and ports and select the agents pod; routes are
+unchanged. Readiness is then pod-wide (either container unready removes both endpoints), and the pod runs
+`mcp.replicaCount` replicas. `agents.strategy` overrides the rollout strategy (`{}` = RollingUpdate).
+`tests/test_agents_colocation.py` guards it.

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Every Service selects exactly the pods of one component (api, mcp, a2a), and every Deployment pins its component.
 
+Rendered three times: the defaults (the api only), ci/all-components-values.yaml (api, mcp and a2a), and the same file
+with agents.colocate=true (carry (Task 21 review): warehouse-infra ADR 0012, the mcp and a2a Services both select the
+one `agents` Deployment).
+
 Run: python3 charts/amr-fleet-control/tests/test_service_selectors.py   (needs helm and PyYAML)
 """
 
@@ -13,9 +17,11 @@ from pathlib import Path
 CHART = Path(__file__).resolve().parents[1]
 
 
-def render(values: str) -> list[dict]:
-    out = subprocess.run(["helm", "template", "amr-fleet-control", str(CHART), "-f", str(CHART / "ci" / values)],
-                         capture_output=True, text=True, check=True).stdout
+def render(values: str, sets: tuple[str, ...] = ()) -> list[dict]:
+    cmd = ["helm", "template", "amr-fleet-control", str(CHART), "-f", str(CHART / "ci" / values)]
+    for s in sets:
+        cmd += ["--set", s]
+    out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
     try:
         import yaml  # type: ignore
     except ModuleNotFoundError:
@@ -24,10 +30,14 @@ def render(values: str) -> list[dict]:
     return [d for d in yaml.safe_load_all(out) if d]
 
 
-def check(values: str, want: set[str], failures: list[str]) -> None:
-    docs = render(values)
+def check(values: str, want: set[str], failures: list[str], sets: tuple[str, ...] = (), services: int = 0) -> None:
+    """want: the Deployments' components; services: the Service count when one Deployment backs several Services
+    (colocated agents), else one Service per component."""
+    docs = render(values, sets)
+    if sets:
+        values = f"{values} --set {' --set '.join(sets)}"
     deployments = [d for d in docs if d["kind"] == "Deployment"]
-    services = [d for d in docs if d["kind"] == "Service"]
+    svcs = [d for d in docs if d["kind"] == "Service"]
     pods = {}
     for d in deployments:
         match = d["spec"]["selector"]["matchLabels"]
@@ -40,9 +50,9 @@ def check(values: str, want: set[str], failures: list[str]) -> None:
         pods[d["metadata"]["name"]] = labels
     if {p.get("app.kubernetes.io/component") for p in pods.values()} != want:
         failures.append(f"{values}: components {sorted(p.get('app.kubernetes.io/component') for p in pods.values())}, want {sorted(want)}")
-    if len(services) != len(want):
-        failures.append(f"{values}: {len(services)} Services, want {len(want)}")
-    for s in services:
+    if len(svcs) != (services or len(want)):
+        failures.append(f"{values}: {len(svcs)} Services, want {services or len(want)}")
+    for s in svcs:
         sel = s["spec"]["selector"]
         hit = [n for n, labels in pods.items() if all(labels.get(k) == v for k, v in sel.items())]
         if len(hit) != 1:
@@ -53,12 +63,14 @@ def main() -> int:
     failures: list[str] = []
     check("default-values.yaml", {"api"}, failures)
     check("all-components-values.yaml", {"api", "mcp", "a2a"}, failures)
+    # carry (Task 21 review): agents.colocate, the api plus one agents Deployment behind the -mcp and -a2a Services.
+    check("all-components-values.yaml", {"api", "agents"}, failures, ("agents.colocate=true",), 3)
     if failures:
         print("FAIL: amr-fleet-control Service selectors")
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("ok: every Service selects exactly one component's Deployment (api; api, mcp, a2a)")
+    print("ok: every Service selects exactly one component's Deployment (api; api, mcp, a2a; api, agents x2 colocated)")
     return 0
 
 
