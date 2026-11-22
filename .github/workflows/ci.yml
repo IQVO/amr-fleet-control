@@ -169,25 +169,34 @@ jobs:
     # Postgres (and Kafka) via testcontainers on the runner's Docker daemon.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check out the equipment emulator the e2e test runs against (pinned commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: IQVO/equipment-emulator
+          ref: b58201e14342c99f5033327214ea317eb2a17962 # v0.1.0 (the released emulator)
+          path: .e2e/equipment-emulator
+      - name: Build the emulator image (BuildKit)
+        run: docker build -t equipment-emulator:e2e .e2e/equipment-emulator
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-      - name: Integration tests (testcontainers; each test boots its own Postgres/Kafka)
+      - name: Integration tests (testcontainers; Postgres, Kafka, Mosquitto, the emulator)
+        env:
+          EQUIPMENT_EMULATOR_IMAGE: equipment-emulator:e2e
         run: go test -tags=integration ./... -race -count=1
 
-  # Fast, BLOCKING mutation subset: runs on every push/PR so a drop in test
-  # quality (tests that execute but stop asserting) is caught immediately.
-  # Subset = ./internal/domain/mission, the StockUnit aggregate: the richest
-  # behavioural core in the domain (15 of the 41 domain mutants) and it
-  # completes in ~1 minute. Thresholds/workers/timeout come from .gremlins.yaml,
-  # so this job, the scheduled `mutation` job below and `make mutation` all
-  # agree. The exhaustive run stays in the `mutation` job.
+  # Fast, BLOCKING mutation gate: runs on every push/PR so a drop in test quality (tests that
+  # execute but stop asserting) is caught immediately. It runs gremlins once PER domain package
+  # (fleetmap, robot, mission, capacity, dispatch: ~270 mutants, a few minutes), because the
+  # aggregate hides a weak package and a gate of 99 needs > 99.00% in each. Thresholds, workers and
+  # timeout come from .gremlins.yaml (plain numbers; a quoted threshold never gates). The weekly
+  # `mutation` job below runs the aggregate. Measured numbers and the one equivalent mutant: MUTATION.md.
   # ============================================================
-  # CLASSIFICATION: TEST QUALITY (MUTATION TESTING, fast subset)
+  # CLASSIFICATION: TEST QUALITY (MUTATION TESTING, every domain package)
   # ============================================================
   mutation-fast:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -195,8 +204,15 @@ jobs:
           go-version-file: go.mod
       - name: Install gremlins
         run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
-      - name: Mutation testing (fast subset — mission aggregate)
-        run: gremlins unleash ./internal/domain/mission
+      - name: Mutation testing (every domain package)
+        run: |
+          # Cap virtual memory so a mutant that loops without bound dies with "out of memory" and
+          # counts as KILLED, instead of exhausting the runner VM (equipment-emulator precedent).
+          ulimit -v 4000000
+          for pkg in ./internal/domain/*/; do
+            echo "== gremlins unleash ${pkg%/}"
+            gremlins unleash "${pkg%/}" || exit 1
+          done
 
   mutation:
     runs-on: ubuntu-latest
@@ -213,7 +229,10 @@ jobs:
       - name: Install gremlins
         run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
       - name: Mutation testing (domain layer)
-        run: gremlins unleash ./internal/domain --workers 1 --timeout-coefficient 30
+        run: |
+          # Same memory cap as mutation-fast (a runaway mutant must not exhaust the VM).
+          ulimit -v 4000000
+          gremlins unleash ./internal/domain --workers 1 --timeout-coefficient 30
       - name: Open or refresh the harness:red issue on a scheduled failure
         if: failure() && github.event_name == 'schedule'
         env:
@@ -253,7 +272,7 @@ jobs:
         run: |
           go test ./internal/domain/... -coverprofile=/tmp/cov.out -covermode=atomic
           go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
-          gremlins unleash ./internal/domain --workers 1 --timeout-coefficient 30 > /tmp/gremlins.log 2>&1 || true
+          (ulimit -v 4000000; gremlins unleash ./internal/domain --workers 1 --timeout-coefficient 30 > /tmp/gremlins.log 2>&1) || true
           echo "### coverage-quality" >> "$GITHUB_STEP_SUMMARY"
           python3 scripts/coverage-quality.py /tmp/cov.out /tmp/gremlins.log | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Open or refresh the harness:red issue on a scheduled failure
@@ -302,6 +321,33 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: govulncheck
         run: govulncheck ./...
+
+  docs-api-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - run: npm ci
+      - name: Regenerate REST API docs from apis/openapi.yaml
+        run: npm run clean-api-docs amr-fleet-control && npm run gen-api-docs amr-fleet-control
+      - name: Fail if generated docs differ from what's committed
+        run: |
+          set -euo pipefail
+          # git diff misses a page generated for a NEW operation (untracked), so check porcelain status too.
+          if ! git diff --exit-code -- docs/api-reference/rest || [ -n "$(git status --porcelain -- docs/api-reference/rest)" ]; then
+            git status --porcelain -- docs/api-reference/rest
+            echo "::error::docs/api-reference/rest is out of sync with apis/openapi.yaml." \
+                 "Run 'npm run gen-api-docs amr-fleet-control' inside docs/ and commit the result."
+            exit 1
+          fi
 
   # Packaging validation runs for every pull request, including the normal
   # GitFlow path to develop; main-only gating left ordinary changes untested.

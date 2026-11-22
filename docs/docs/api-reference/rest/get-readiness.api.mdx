@@ -1,0 +1,60 @@
+---
+id: get-readiness
+title: "Readiness"
+description: "200 when Postgres, Kafka and the MQTT link are reachable; 503 while draining or while one is not."
+sidebar_label: "Readiness"
+hide_title: true
+hide_table_of_contents: true
+api: eJzVVlFz2zYM/is4vsz2ZMXNktvqvMxL016uWZomaXe7OjfREiyxpkCVpOJoPv/3HSg5seP0YS+725NlkAA+fAABrISp0EqvDJ1nYixy9NcoM0XonIhEhi61quJjMRaHoxEsCyS4Ms7nFl0E7+V8IUFSBr5A+P3j7S1oRQuQFsGiTAs503gCx6OfYFkojZBZqUhRDsZ2EkMIygEZH4tIeJk7Mf4iCpTaF+IuEhZdZcihE+MVQ+CfXVyMuGHl1JBH8nxDVpVWaQjs4Kvjayvh0gJLyV++qVCMhZl9xdQL9vGtVhYz9uy89LVjz5VlcrxqXXfyJ23nraJcRAIfZFlpDLjNIpiTWSMiQcb/1X7frdeR8MprVrxpLa3XLDwe/bQf0XOCjX3Gb02P7EZ8+khrL8mwQsqQ0mZYk7yXSvOtpP9/JCjagVlZM9NY/vjv4Iazje1og5K5yHA/iNbS8xCesL1wshe3Io85Wj4LTl5gZDfdN55TBHON6AGtNRZYMX5GHWdPKkI7nNWOKWM7Xir9IixFzktKX8K8RfVVy2koxnUkSvSF6RqBiEQlfSHG4iDk6G9mD+09WkazErXVYiwK7ys3PjiQpR2GAIYM0xodL6XFwtQOh65xHksXMzGWpBbrO8Y3NwFbh2TPAEyuzkUk2F9L06t4FI+6KpZpqGKS5cu6pVQdWZzrXai58kU9i1NTHpx//PxhHzrzXgZe9y3/qr7dm7hLC9tgrrVKkRxuIfp0eXF+enZ5c/ZGrJ+n+7ZAcPWsZWVjV6OFwM9cpghmDoPBnu/BAHp/nN6AV2gjeIeEVqUnMHlzDaPR6FW0+TrqR5BKrTGDWTOlUnq0SurhXJvlI0PBUmgIDx5KWYFFHd6ZK1QFR1HoOE6WCK6QFYJ0IJ11G/0f3K7CcT+GCWjMQbkpyTTFymPGvcnivHaYgfRgKEXoJYejw4RPkqPDw6R/Aso7qKzhjud4FlisjA3apBuYNYD3SN6BoSklj2UV75dcey+B3gXmE+dUTphFcLp5N1cqXWD2qYrgAvNTwxn0fOEC87dSacz6MVwa+PxmAsej4xEYm6GNpkQmQ8aLWY4gqwqldVCgxXhKUxoMzjMsK+O558aDAZzdo23g6sPNLXSNyEGydWf4HpsEeq+Grw5/gbSQVqYerevHwJUxV9b5oIjOAz5gWnt0JyDBorfNlJbKF0/JWWAT5u/MZA3fqC259tQby6yTW6KFoLQD4horLRvMxuBtjcnJrslwX5LxBdopBePKQXI0eg1qy8gCm6FFTm8SwwfO1uHDQ8Dz9vxyctHmXmoXFoIOUe/wCApTW9cfQzKT2bCLNYmmlCi6l1plw0paWaJHm0SQaMyHZPxwbmpiR9dnt9d/Tn67OHuyb1GjdBiCWGATgTMbxqCmDO1ueBtapyRzqWgMSVtIT14iSKyZmWeimhZkljQsJGVmPh9WRpHng41gazAn0GOf/LTmvOh0W9KUgl2wmCvH8FJJXAWUIyhyKmuDWCrKzLIfQbLb9tlZi3V7um+RlHLT1514SkHOC0GWdNV6xgPGDQYhJ9dvT+H10fHPkHxv0iZdLYBrp1TCoykJD0XWvkDynRb02gFma439eErc+CrjfClpqzF+d71cPW0n/82m2c5Ebn8HlZYq4A2DYtXNvS+im3t3kSiM8yxZrWbS4Ser12sWf6vRNmL85S4S99IqxsD/1hEvsBnaMCgX2IixmISWyANN6joMrecbGE/FxwH87uxWrNf/AKmXDAc=
+sidebar_class_name: "get api-method"
+info_path: docs/api-reference/rest/amr-fleet-control-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Readiness"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"get"}
+  path={"/readyz"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+200 when Postgres, Kafka and the MQTT link are reachable; 503 while draining or while one is not.
+
+<ParamsDetails>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./get-readiness.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./get-readiness.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      

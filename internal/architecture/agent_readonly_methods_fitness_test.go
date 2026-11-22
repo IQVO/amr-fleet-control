@@ -1,0 +1,114 @@
+package architecture
+
+import (
+	"go/ast"
+	"go/types"
+	"slices"
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// agentWriteVerbs are the method names agent sources may not select on ANY value (plan 04 Task 21 review):
+// the write methods of the postgres repos and the unit of work (Save, Insert, Update, Lock, Purge, Delete,
+// Append, Enqueue) and of the pgx pool and its transactions (Exec, Begin, BeginTx, CopyFrom, SendBatch), plus
+// this module's write use cases and unit-of-work accessors on usecases.Service (RequestLeg, CancelLeg,
+// HandleState, HandleConnection, HandleFactsheet, Tick, Recover, UnitOfWork, AfterCommit): a Service built by
+// NewReader answers ErrReadOnly to every write, and the sensor refuses the call before it can be made. A verb
+// list, not a type check: the sensor parses (fixtures need no module to compile against), so a selector is
+// judged by its name.
+//
+// carry (Task 18 review): the pool's raw-SQL entry points are refused too (Query, QueryRow, Acquire,
+// AcquireFunc, AcquireAllIdle, Conn, PgConn, ExecParams, Hijack): Query/QueryRow run ANY SQL, so a pool built
+// by the allowlisted postgres.NewReadOnlyPool is a write seam without them. The only legit pool method in agent
+// sources is Close; the Reader's own reads go through the postgres adapter, never a raw pool call.
+//
+// False-positive allowances, by design: a package-qualified FUNCTION is not a method and is judged by the
+// allowlist instead (slices.Insert, slices.Delete, time.Tick stay allowed; usecases/postgres identifiers keep
+// their allowlist). Anything else with one of these names is refused even when it is not a database write (a
+// sync.Mutex Lock): an agent source has no business with either, and a real need adds its exact expression to
+// agentWriteVerbAllowances with the reason.
+var agentWriteVerbs = []string{"Save", "Insert", "Exec", "Begin", "BeginTx", "CopyFrom", "SendBatch", "Enqueue",
+	"Append", "Lock", "Purge", "Delete", "Update",
+	"RequestLeg", "CancelLeg", "HandleState", "HandleConnection", "HandleFactsheet", "Tick", "Recover", "UnitOfWork", "AfterCommit",
+	"Query", "QueryRow", "Acquire", "AcquireFunc", "AcquireAllIdle", "Conn", "PgConn", "ExecParams", "Hijack"}
+
+// agentWriteVerbAllowances maps an exact selector expression (types.ExprString) to why it is not a write. Empty:
+// no agent source needs one today.
+var agentWriteVerbAllowances = map[string]string{}
+
+// agentRawDriverImports are refused outright: the read pool is built by postgres.NewReadOnlyPool only, so a raw driver
+// import can only mean a second, unguarded way to the database.
+var agentRawDriverImports = []string{"github.com/jackc/pgx", "database/sql"}
+
+// agentWriteMethodViolations refuses a write verb selected on anything but an imported package, and a raw
+// driver import. names resolves each local package name of f (agentQualifiers).
+func agentWriteMethodViolations(f *ast.File, names map[string]string) []string {
+	var out []string
+	for _, imp := range f.Imports {
+		if path, err := strconv.Unquote(imp.Path.Value); err == nil {
+			for _, raw := range agentRawDriverImports {
+				if path == raw || strings.HasPrefix(path, raw+"/") {
+					out = append(out, "imports "+path+": a raw database driver (the read pool comes from postgres.NewReadOnlyPool only)")
+				}
+			}
+		}
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || !slices.Contains(agentWriteVerbs, sel.Sel.Name) {
+			return true
+		}
+		if pkg, isIdent := sel.X.(*ast.Ident); isIdent && pkg.Obj == nil && names[pkg.Name] != "" {
+			return true // a package-qualified function: the allowlist judges it
+		}
+		expr := types.ExprString(sel)
+		if _, allowed := agentWriteVerbAllowances[expr]; !allowed {
+			out = append(out, "selects "+expr+": "+sel.Sel.Name+" is a write method (the surface reads only)")
+		}
+		return true
+	})
+	return out
+}
+
+// The allowlist judges package-qualified identifiers only, so a write METHOD on a value an allowlisted
+// constructor returned (postgres.NewRobots(pool).Save, pool.Exec), a write use case on the Reader and a raw
+// driver import would get through it; each fixture below passes the allowlist rules alone.
+func TestAgentReadOnlySensorRefusesWriteMethodsAndRawDrivers(t *testing.T) {
+	mcpSurface := agentSurfaces[0]
+	pg := "import \"" + modulePath + "/internal/adapters/outbound/postgres\"\n"
+	bad := map[string]string{
+		"a write method on a constructed repo": "package x\n" + pg + "func f() { _ = postgres.NewRobots(nil).Save(ctx, nil) }\n",
+		"a write method on a repo variable":    "package x\n" + pg + "func f() { r := postgres.NewMissions(nil); _ = r.Insert(ctx, nil) }\n",
+		"Update on the missions repo":          "package x\n" + pg + "func f() { _ = postgres.NewMissions(nil).Update(ctx, nil) }\n",
+		"Exec on the pool":                     "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); _, _ = p.Exec(ctx, \"DELETE FROM missions\") }\n",
+		"a method value of a write":            "package x\n" + pg + "func f() { save := postgres.NewRobots(nil).Save; _ = save }\n",
+		"a write method through a field":       "package x\nfunc (d deps) f() { _, _ = d.pool.Begin(ctx) }\n",
+		"a method expression of a write":       "package x\n" + pg + "var _ = (*postgres.Robots).Save\n",
+		"a write use case on the reader":       "package x\nfunc f(r reader) { _, _ = r.RequestLeg(ctx, req) }\n",
+		"the reader's unit of work":            "package x\nfunc f(r reader) { _ = r.UnitOfWork() }\n",
+		// carry (Task 18 review): raw SQL through the pool.
+		"raw SQL through pool.Query":    "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); _, _ = p.Query(ctx, \"DELETE FROM missions\") }\n",
+		"raw SQL through pool.QueryRow": "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); _ = p.QueryRow(ctx, \"UPDATE fleets SET map_version = 1 RETURNING 1\") }\n",
+		"a pooled connection":           "package x\n" + pg + "func f() { p, _ := postgres.NewReadOnlyPool(ctx, dsn); c, _ := p.Acquire(ctx); _ = c.Conn().PgConn().ExecParams(ctx, \"DELETE FROM missions\", nil, nil, nil, nil) }\n",
+		"a pgx import":                  "package x\nimport _ \"github.com/jackc/pgx/v5/pgxpool\"\n",
+		"a pgx root import":             "package x\nimport _ \"github.com/jackc/pgx/v5\"\n",
+		"a database/sql import":         "package x\nimport _ \"database/sql\"\n",
+	}
+	for _, verb := range agentWriteVerbs {
+		bad["the write verb "+verb] = "package x\nfunc f(v repo) { _ = v." + verb + " }\n"
+	}
+	for name, src := range bad {
+		if got, err := agentSourceViolations(mcpSurface, "fixture.go", src); err != nil || len(got) == 0 {
+			t.Errorf("the sensor does not flag %s (violations=%v, err=%v)", name, got, err)
+		}
+	}
+	// The read wiring, package-qualified slice/time helpers and non-write methods stay allowed.
+	good := "package x\nimport (\n\"slices\"\n\"time\"\n)\n" + pg +
+		"func f() { pool, _ := postgres.NewReadOnlyPool(ctx, dsn); defer pool.Close(); _ = pool.Ping(ctx)\n" +
+		"r, _ := usecases.NewReader(m, usecases.DefaultConfig(), postgres.NewRobots(pool), postgres.NewMissions(pool), clock)\n" +
+		"_, _ = r.Fleet(ctx, id); _, _ = r.OpenLegs(ctx, id); s := slices.Insert(xs, 0, 1); _ = slices.Delete(s, 0, 1); _ = time.Tick }\n"
+	if got, err := agentSourceViolations(mcpSurface, "fixture.go", good); err != nil || len(got) != 0 {
+		t.Errorf("false positive on the read wiring: %v (err=%v)", got, err)
+	}
+}

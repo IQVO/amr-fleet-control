@@ -1,0 +1,97 @@
+// Package mqtt connects amr-fleet-control to the broker: ONE link for the whole fleet speaking
+// VDA 5050 v3 (decisions D2, D18).
+package mqtt
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	pahomqtt "github.com/eclipse/paho.mqtt.golang"
+)
+
+// InboxSize is how many tasks one link buffers while its worker is busy.
+const InboxSize = 1024
+
+// clientOptions: OrderMatters is on, so paho calls the handler one message at a time in
+// arrival order on its own goroutine; the handler must never block (it only enqueues). carry
+// (Task 11 review): the ordered store resumes the publishes in flight at a connection loss in
+// publish order (the default MemoryStore resumes them in map order), and auto-reconnect retries
+// at least every 2 s (paho backs off up to 10 min by default).
+func clientOptions(brokerURL, clientID string, onConnect func(pahomqtt.Client)) *pahomqtt.ClientOptions {
+	return pahomqtt.NewClientOptions().AddBroker(brokerURL).SetClientID(clientID).
+		SetAutoReconnect(true).SetConnectRetry(true).SetConnectRetryInterval(2 * time.Second).SetMaxReconnectInterval(2 * time.Second).
+		SetOrderMatters(true).SetOnConnectHandler(onConnect).SetStore(pahomqtt.NewOrderedMemoryStore())
+}
+
+// connect opens a client; onConnect runs after every (re)connection, so subscriptions of the
+// clean session are made again there. tune adjusts the options before connecting.
+func connect(brokerURL, clientID string, onConnect func(pahomqtt.Client), tune ...func(*pahomqtt.ClientOptions)) (pahomqtt.Client, error) {
+	o := clientOptions(brokerURL, clientID, onConnect)
+	for _, f := range tune {
+		f(o)
+	}
+	c := pahomqtt.NewClient(o)
+	tok := c.Connect()
+	if !tok.WaitTimeout(15*time.Second) || tok.Error() != nil {
+		c.Disconnect(0)
+		return nil, fmt.Errorf("mqtt connect %s as %s: %v", brokerURL, clientID, tok.Error())
+	}
+	return c, nil
+}
+
+func publish(c pahomqtt.Client, topic string, payload []byte) error {
+	tok := c.Publish(topic, 1, false, payload)
+	if !tok.WaitTimeout(5 * time.Second) {
+		return fmt.Errorf("mqtt publish %s: timeout", topic)
+	}
+	return tok.Error()
+}
+
+func subscribe(c pahomqtt.Client, topic string, h pahomqtt.MessageHandler) error {
+	return awaitSubscribe(topic, c.Subscribe(topic, 1, h), 10*time.Second)
+}
+
+// task is one unit of work for a link's worker.
+type task func(ctx context.Context)
+
+// inbox is the queue between paho (and the retransmit ticker) and the link's single worker.
+type inbox struct {
+	ch   chan task
+	log  *slog.Logger
+	link string
+}
+
+func newInbox(size int, link string, log *slog.Logger) *inbox {
+	return &inbox{ch: make(chan task, size), log: log, link: link}
+}
+
+// offer enqueues without blocking. A full inbox drops the message: a robot repeats its state at least every 30 s and its retained connection and factsheet on reconnect, so the drop is logged at ERROR.
+func (b *inbox) offer(t task) {
+	select {
+	case b.ch <- t:
+	default:
+		b.log.Error("inbox full; task dropped", "link", b.link, "capacity", cap(b.ch))
+	}
+}
+
+// put enqueues, waiting for room until ctx ends. For callers that are not paho callbacks.
+func (b *inbox) put(ctx context.Context, t task) {
+	select {
+	case b.ch <- t:
+	case <-ctx.Done():
+	}
+}
+
+// drain runs queued tasks in order until ctx ends.
+func (b *inbox) drain(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case t := <-b.ch:
+			t(ctx)
+		}
+	}
+}

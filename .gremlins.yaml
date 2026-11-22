@@ -19,19 +19,20 @@ unleash:
   timeout-coefficient: 30
 
   threshold:
-    # gremlins fails when the measured value is <= the threshold
-    # (internal/report/report.go in gremlins itself), so a threshold must
-    # sit strictly BELOW the number this repo can meet today. Measure
-    # first (`make mutation-full`), THEN set these -- don't guess/copy a
-    # sibling repo's numbers, every domain layer's mutant survivability
-    # differs. See HARNESS.md's mutation-testing section for the
-    # tagless-switch-under-reports pitfall before assuming a low number
-    # means missing tests.
+    # gremlins fails when the measured value is <= the threshold (internal/report/report.go in
+    # gremlins itself), so a gate of 99 needs MORE than 99.00% in every run. PLAIN numbers: gremlins
+    # v0.6.0 reads these two keys with a float type assertion, so a quoted value is read as 0 and
+    # never gates.
     #
-    # WRITE A PLAIN NUMBER, NEVER A QUOTED STRING. gremlins v0.6.0 reads these two keys with
-    # a float type assertion (internal/report/report.go `assess`), so `efficacy: "95"` (a YAML
-    # string) is read as 0 and the gate NEVER fails. Verified: a package at 95.24% efficacy exits 0
-    # with "99" and exits 10 with 99. The values below stay 0 (dormant) until you replace them:
-    # efficacy = {{MEASURED_EFFICACY_MINUS_1}}, mutant-coverage = {{MEASURED_MUTANT_COVERAGE_MINUS_1}}.
-    efficacy: 0
-    mutant-coverage: 0
+    # Measured 2026-11-21 (Task 22), per package, cold test cache, gremlins v0.6.0, workers 1,
+    # timeout-coefficient 30 (killed / lived / not covered):
+    #   fleetmap  efficacy 100.00%  mutant coverage 100.00%   (56 / 0 / 0)
+    #   robot     efficacy 100.00%  mutant coverage 100.00%   (48 / 0 / 0)
+    #   mission   efficacy  99.14%  mutant coverage 100.00%   (115 / 1 / 0; make mutation, the fast blocking subset)
+    #   capacity  efficacy 100.00%  mutant coverage 100.00%   (8 / 0 / 0)
+    #   dispatch  efficacy 100.00%  mutant coverage 100.00%   (39 / 0 / 0)
+    #   ./internal/domain (make mutation-full): efficacy 99.62%  mutant coverage 100.00%   (265 / 1 / 0, 1 timed out)
+    # The one living mutant is equivalent (mission.go fits, `dr > pick`); the timed-out one is a runaway loop
+    # (route.go:35) that CI's `ulimit -v 4000000` kills: MUTATION.md.
+    efficacy: 99
+    mutant-coverage: 99

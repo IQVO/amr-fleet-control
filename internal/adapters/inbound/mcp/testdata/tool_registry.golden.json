@@ -1,0 +1,117 @@
+[
+  {
+    "_meta": {
+      "com.warehouse/authority": "L1"
+    },
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read the fleet: map id and version, the handoff points (AS/RS ports and stations), every robot with its connection, PackML state (IDLE, EXECUTE, SUSPENDED = charging, HELD = a blocking error, STOPPED = offline or stale), battery, node and errors, and the capacity counts. Read-only; an unknown fleet fails with fleet-not-found.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "fleetId": {
+          "description": "the fleet id, e.g. AMR1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fleetId"
+      ],
+      "type": "object"
+    },
+    "name": "get_fleet"
+  },
+  {
+    "_meta": {
+      "com.warehouse/authority": "L1"
+    },
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read one leg: container, from and to handoff points, status, the robot executing it, and once failed the reason (CANCELLED, ROBOT_BLOCKED, ROBOT_FAULT, ROBOT_OFFLINE, ORDER_REJECTED, PICK_FAILED, DROP_FAILED, MAP_VERSION_RETIRED) with the robot's errorType. Read-only; an unknown fleet fails with fleet-not-found, an unknown leg with leg-not-found.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "fleetId": {
+          "description": "the fleet id, e.g. AMR1",
+          "type": "string"
+        },
+        "legId": {
+          "description": "the leg id, e.g. leg-0f3a91",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fleetId",
+        "legId"
+      ],
+      "type": "object"
+    },
+    "name": "get_leg"
+  },
+  {
+    "_meta": {
+      "com.warehouse/authority": "L1"
+    },
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read one robot of the registry: connection, PackML state, battery, charging, availability, the node it stands on, its mission, its active error types, when it last reported, and its factsheet. Read-only; an unknown fleet fails with fleet-not-found, a robot not seen yet with robot-not-found (a robot appears on its first report, so a later read may find it).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "fleetId": {
+          "description": "the fleet id, e.g. AMR1",
+          "type": "string"
+        },
+        "manufacturer": {
+          "description": "the robot's VDA 5050 manufacturer, e.g. EMU",
+          "type": "string"
+        },
+        "serialNumber": {
+          "description": "the robot's VDA 5050 serial number, e.g. R1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fleetId",
+        "manufacturer",
+        "serialNumber"
+      ],
+      "type": "object"
+    },
+    "name": "get_robot"
+  },
+  {
+    "_meta": {
+      "com.warehouse/authority": "L1"
+    },
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List the fleet's open legs (QUEUED, ASSIGNED, PICKED_UP, CANCEL_REQUESTED) in acceptance order, each the same shape as get_leg. Internal charge and park missions are not legs. Read-only; an unknown fleet fails with fleet-not-found (never an empty list).",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "fleetId": {
+          "description": "the fleet id, e.g. AMR1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fleetId"
+      ],
+      "type": "object"
+    },
+    "name": "list_open_legs"
+  }
+]

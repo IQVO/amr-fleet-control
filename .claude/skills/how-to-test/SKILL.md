@@ -98,6 +98,15 @@ from `origin/develop`, not just that the percentage cleared the
 `.gremlins.yaml` gate, is the real proof a fix didn't just get lucky on
 the threshold.
 
+## The end-to-end test needs the local emulator image
+
+`cmd/api/e2e_emulator_integration_test.go` (part of `make integration`) runs the
+REAL equipment emulator from the image named by `EQUIPMENT_EMULATOR_IMAGE`
+(default `equipment-emulator:e2e`). Build it first with `make emulator-image`
+(git archive of the equipment-emulator `v0.1.0` release | docker build). GHCR's
+`equipment-emulator:v0.1.0` is amd64-only, so on arm64 hosts build locally. CI
+builds the same commit (`b58201e`) in the `integration` job.
+
 ## Kafka/Postgres integration tests: testcontainers, never a skip-gate
 
 A `-tags=integration` test touching Kafka or Postgres MUST start its own

@@ -20,8 +20,9 @@ relationship 4, the same shape as asrs-control's relationship 5:
 ## Conventions
 
 - Errors: RFC 9457 `application/problem+json` with `code`; every problem type declares a replay class in
-  `errors.go`. FINAL: 400s, 404s, 409 idempotency-key-reused, 422 unknown-handoff-point. RETRYABLE: 422
-  handoff-unreachable, container-busy, fleet-unavailable; 409 leg-not-cancellable, leg-ended; 500, 503.
+  `errors.go`. FINAL: 400s, 404 leg-not-found, 409 idempotency-key-reused. RETRYABLE: 404 fleet-not-found,
+  robot-not-found; 422 unknown-handoff-point, handoff-unreachable, container-busy, fleet-unavailable; 409
+  leg-not-cancellable, leg-ended; 500, 503 (ruling P3-R13: a refusal the map file decides is never FINAL).
 - Every POST requires `Idempotency-Key` (1-128 chars); replays carry `Idempotency-Replayed: true`; 24 h window.
 - Unauthenticated by fleet decision (2026-09-11); `TestNoAuthMiddlewareReintroduced` keeps it so.
 - Bodies are snake_case. No node, edge or order appears in a leg body.

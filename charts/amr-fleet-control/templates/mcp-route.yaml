@@ -1,0 +1,36 @@
+{{- if and .Values.gatewayApi.enabled .Values.mcp.enabled .Values.mcp.route.enabled -}}
+{{- /* ruling Note C: gatewayApi.enabled gates every HTTPRoute, like the api route (material-flow-control parity). */ -}}
+{{- /*
+/api/mcp/amr-fleet-control -> Service amr-fleet-control-mcp:8090, prefix rewritten to /mcp. /healthz stays
+off the host. Nothing on the route checks credentials (fleet rule).
+*/ -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "amr-fleet-control.mcpFullname" . }}
+  labels:
+    {{- include "amr-fleet-control.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+  {{- with include "amr-fleet-control.kongPluginNames" . }}
+  annotations:
+    konghq.com/plugins: {{ . | quote }}
+  {{- end }}
+spec:
+  # carry (plan 04 Task 23 review lesson a): mcp.route.parentRefs (warehouse-infra's _platform.yaml), else gatewayApi.parentRefs.
+  parentRefs:
+    {{- include "amr-fleet-control.parentRefs" (.Values.mcp.route.parentRefs | default .Values.gatewayApi.parentRefs) | trim | nindent 4 }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.mcp.route.path }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /mcp
+      backendRefs:
+        - name: {{ include "amr-fleet-control.mcpFullname" . }}
+          port: {{ .Values.mcp.service.port }}
+{{- end }}

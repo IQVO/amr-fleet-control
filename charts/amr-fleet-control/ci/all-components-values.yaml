@@ -1,0 +1,36 @@
+# Every optional component and route at once (api + mcp + a2a + the three HTTPRoutes). Dummy values, no password.
+database:
+  existingSecret: "amr-fleet-control-db"
+  migrationsExistingSecretKey: "MIGRATIONS_DATABASE_URL"
+kafka:
+  brokers: "kafka.warehouse-systems.svc.cluster.local:9092"
+config:
+  logLevel: "debug"
+gatewayApi:
+  enabled: true
+  parentRefs:
+    - name: warehouse-gateway
+      namespace: kong
+      sectionName: http
+mcp:
+  enabled: true
+  route:
+    enabled: true
+    parentRefs:
+      - name: warehouse-gateway
+        namespace: kong
+        sectionName: http
+a2a:
+  enabled: true
+  route:
+    enabled: true
+    parentRefs:
+      - name: warehouse-gateway
+        namespace: kong
+        sectionName: http
+# The platform keys warehouse-infra's _platform.yaml supplies (test_kong_config.py asserts the plugins carry them).
+kongPlugins:
+  cors:
+    origin: "https://console.example.invalid"
+  opentelemetry:
+    tracesEndpoint: "http://otel.example.invalid:4318/v1/traces"

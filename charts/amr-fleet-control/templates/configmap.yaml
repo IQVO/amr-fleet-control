@@ -1,0 +1,37 @@
+{{- include "amr-fleet-control.require" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "amr-fleet-control.fullname" . }}
+  labels:
+    {{- include "amr-fleet-control.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+data:
+  ADDR: {{ .Values.config.addr | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  KAFKA_BROKERS: {{ .Values.kafka.brokers | quote }}
+  MQTT_URL: {{ .Values.mqtt.url | quote }}
+  MQTT_CLIENT_ID: {{ .Values.mqtt.clientId | quote }}
+  AMR_MAP_FILE: {{ .Values.config.mapFile | quote }}
+  OUTBOX_INTERVAL_MS: {{ .Values.config.outboxIntervalMs | quote }}
+  OUTBOX_BATCH: {{ .Values.config.outboxBatch | quote }}
+  OUTBOX_MAX_ATTEMPTS: {{ .Values.config.outboxMaxAttempts | quote }}
+  CHARGE_LOW_PERCENT: {{ .Values.config.chargeLowPercent | quote }}
+  CHARGE_RESUME_PERCENT: {{ .Values.config.chargeResumePercent | quote }}
+  RELEASE_AHEAD_NODES: {{ .Values.config.releaseAheadNodes | quote }}
+  NODE_TOLERANCE_METRES: {{ .Values.config.nodeToleranceMetres | quote }}
+  ROBOT_STALE_AFTER_SECONDS: {{ .Values.config.robotStaleAfterSeconds | quote }}
+  ORDER_RESEND_AFTER_SECONDS: {{ .Values.config.orderResendAfterSeconds | quote }}
+  ORDER_RESEND_LIMIT: {{ .Values.config.orderResendLimit | quote }}
+  REROUTE_AFTER_SECONDS: {{ .Values.config.rerouteAfterSeconds | quote }}
+  DEADLOCK_TIMEOUT_SECONDS: {{ .Values.config.deadlockTimeoutSeconds | quote }}
+  ROBOT_BLOCKED_TIMEOUT_SECONDS: {{ .Values.config.robotBlockedTimeoutSeconds | quote }}
+  ROBOT_OFFLINE_TIMEOUT_SECONDS: {{ .Values.config.robotOfflineTimeoutSeconds | quote }}
+  SERVICE_VERSION: {{ include "amr-fleet-control.serviceVersion" . | quote }}
+  ENVIRONMENT: {{ .Values.environment | quote }}
+  {{- if .Values.otel.enabled }}
+  OTEL_SERVICE_NAME: {{ .Values.otel.serviceName | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.otel.endpoint | quote }}
+  {{- end }}
+  map.yaml: |
+    {{- default (.Files.Get "files/map.yaml") .Values.map | nindent 4 }}

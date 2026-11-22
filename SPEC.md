@@ -1,101 +1,80 @@
-# SPEC.md — warehouse-harness-template
+# SPEC.md — amr-fleet-control
 
-(The agent entry point is now `CLAUDE.md`, with `AGENTS.md` a symlink to it;
-this file stays as the longer design note.)
+The agent entry point is `CLAUDE.md` (`AGENTS.md` is a symlink to it). This file is the longer description of what
+amr-fleet-control is and does, as built on the feature branch. The wire contracts are `apis/openapi.yaml` (REST) and
+`apis/asyncapi.yaml` (Kafka events); the robot contract is VDA 5050 v3.0.0 as IQVO/equipment-emulator `v0.1.0`
+implements it (`docs/vda5050-subset.md`); the decisions are `docs/adr/0001`-`0006`. When this file and a contract or
+an ADR disagree, the contract or ADR wins and this file is fixed. The documentation site (`docs/`, published to
+https://iqvo.github.io/amr-fleet-control/ from `main`) has the long form of every section.
 
-This repo is `harness-template: v2` for the warehouse-systems fleet's Go
-bounded-context services. It is a TEMPLATE, not a runnable service: no
-domain code of its own (the one exception is the shared, opt-in
-`internal/domain/shared/gs1` package, see HARNESS.md), no `cmd/`, no `apis/openapi.yaml`.
+## Role
 
-## What's here
+amr-fleet-control is the VDA 5050 master control bounded context of the warehouse-systems WCS tier (warehouse-docs
+`docs/wcs/amr-fleet-control.md`; ADR 0001). Classification **Generic**: fleet managers ship with the robots, so this
+one is built to the standard and behind the **subsystem-controller interface** a vendor fleet manager could implement
+instead. CloudEvents segment `wes`. It is step 3 of the WCS build order, after the equipment emulator and asrs-control.
 
-- `Makefile`, `.github/workflows/ci.yml`, `lefthook.yml`, `.golangci.yml`,
-  `.gremlins.yaml` — the canonical local+CI quality gate, with
-  `{{SERVICE}}` / `{{SERVICE_REPO}}` / `{{RICHEST_AGGREGATE}}` placeholders.
-- `internal/architecture/architecture_test.go` + `fitness_test.go` — arch-go
-  fitness tests. These COMPILE AND PASS as-is against this empty tree
-  (there's nothing to violate yet) — `go test ./internal/architecture/...
-  -v` is the fastest way to confirm you haven't broken the template.
-- `.claude/rules/*.md` — skeleton guide files (domain model, REST API,
-  integration events) with `<!-- fill in -->` placeholders, not fabricated
-  content.
-- `.claude/skills/how-to-*.md`, `.claude/commands/*.md` — reusable how-tos
-  and review sensors, ported from `inventory-storage` (the fleet's richest
-  reference harness) with a template note asking the instantiator to adapt
-  every example to their own real code.
-- `scripts/coverage-quality.py` — the drift job's "high line-coverage but
-  a surviving mutant" detector, verbatim from inventory-storage (this
-  script's logic is package-path-agnostic).
-- `scripts/new-service.sh` — instantiation script. See its header comment.
-- `HARNESS.md` — the manifest: every sensor's purpose/cost/lifecycle
-  position, and the real incident behind every fitness test.
-- `internal/domain/shared/gs1/` — GTIN / SSCC value objects, mod-10 and GS1-128 scan parser (stdlib only).
-  Byte-identical in every service that adopts it (`migrate_v3.py --with-gs1`); edit it HERE only, then update
-  `sourceDigest` in `checksum_test.go`. Not part of a default scaffold (`WITH_GS1=1` keeps it).
-- `templates/cloudevents/*.go.tmpl` — the fleet reference CloudEvents 1.0
-  helper + tests, generated into Kafka services by `new-service.sh`.
-- `templates/idempotency/replay_classes_test.go.tmpl` (driver-free, verbatim) +
-  `replay_classes_wiring_test.go.tmpl` (the repo's closures) + `docs/idempotency-replay-classes.md` — the
-  reference test and adoption steps for the fleet's idempotency replay classes (FINAL, OUTCOME,
-  RETRYABLE; rule in `.claude/rules/fleet/idempotency-and-outbox.md`). Copy-and-adapt, not generated.
+It **owns** the leg queue, the assignment of legs to robots, the node-and-edge map (one versioned file per process),
+the reservation of every released node and edge, deadlock detection and resolution, charging and parking, and the
+registry of robot connection, PackML state, errors and factsheet.
 
-## Events: CloudEvents 1.0 is MANDATORY
+It **does not own** which container moves and when (material-flow-control, from the WES), container contents
+(inventory-storage), the AS/RS (asrs-control) or the building's travel graph (facility-layout; the ACL is a later
+plan, decision D1). No node, edge, order, base or horizon reaches the WES.
 
-Every Kafka message any service instantiated from this template produces or
-consumes (integration `warehouse.<ctx>.events` AND analytics
-`warehouse.<ctx>.analytics`) is a CloudEvents 1.0 event in structured
-content mode. This is a hard fleet rule, not a preference, and the template
-must only ever generate that:
+## Guarantees (responsibilities 1-6 of the context page)
 
-- No flat envelope (`event_id`/`event_type`/`occurred_at`), no dual-write,
-  no dual-read, no envelope toggle env var (`EVENT_ENVELOPE_MODE` is gone).
-  Never add a template option, placeholder or skeleton that offers one;
-  `TestNoEventEnvelopeToggleOrFlatEnvelope` fails CI if generated code does.
-- Build/validate/(un)marshal with `github.com/cloudevents/sdk-go/v2/event`
-  via `internal/adapters/kafka/cloudevents/` (generated from
-  `templates/cloudevents/`); transport stays kafka-go.
-- Kafka header `content-type: application/cloudevents+json; charset=UTF-8`.
-- Required attributes: `specversion=1.0`, `id` (UUID, stable across outbox
-  redelivery), `source=/warehouse/<repo>`, `type`, `subject` (aggregate
-  id), `time` (occurred-at, UTC), `datacontenttype=application/json`,
-  `dataschema=urn:warehouse:<repo>:<events|analytics>:<EventName>:v<N>`.
-- `type` = `com.warehouse.<subdomain>.<bounded-context>.<entity>.<EventName>`;
-  for a generated service the prefix is the `<event-subdomain>`/`<event-context>` passed to `new-service.sh`.
-  Breaking payload change => new `.v2` type + new dataschema version, never mutate.
-- Consumers dispatch on the FULL `type`, ignore unknown types, dedupe on
-  `id`, and DLQ/skip (never crash, never parse a legacy shape) anything that
-  fails CloudEvents validation.
-- When editing `templates/cloudevents/`, re-prove it the way the PR that
-  added it did: instantiate into a scratch copy with
-  `new-service.sh demo agg wes demo-ctx`, `go get
-  github.com/cloudevents/sdk-go/v2 github.com/segmentio/kafka-go`, `go test
-  ./internal/...`.
+1. A robot executes one order at a time.
+2. A node or edge in a released base is reserved by exactly one robot.
+3. `orderUpdateId` only increases within one order.
+4. A robot below the charge threshold is never assigned a leg.
+5. Every mission is pinned to one map version.
+6. Every accepted leg ends in exactly one of `LegCompleted` or `LegFailed`, with a reason.
 
-Full standard and the fleet's cross-service type catalogue: warehouse-docs
-`docs/strategic-design/event-standard-cloudevents.md`.
+## Processes
 
-## Working in THIS repo (the template itself, not an instantiated copy)
+| Binary | Port | What |
+| --- | --- | --- |
+| `cmd/api` | `:8080` | REST (relationship 4), the ONE MQTT fleet link (one worker for every robot message and the 1 s tick, one ordered sender), the transactional-outbox relay, the hourly idempotency purge, `/healthz` and `/readyz` (Postgres, Kafka, MQTT) |
+| `cmd/mcp` | `:8090` | read-only MCP (Streamable HTTP, stateless): tools `get_fleet`, `list_open_legs`, `get_leg`, `get_robot`, resource `warehouse://amr-fleet-control/fleets/{fleetId}`, prompt `review_leg` |
+| `cmd/a2a` | `:8093` | read-only A2A agent (JSON-RPC): the same four skills, the card at `/.well-known/agent-card.json` |
 
-- Before changing any sensor's config (`.golangci.yml`, `.gremlins.yaml`
-  thresholds, CI job shape), check whether the change should also flow
-  back into the 9 already-instantiated repos, or whether it's template-v2
-  material. This repo has no `harness-audit` conformance checker yet
-  (Task 6.2 of the harness-coverage-expansion plan) to catch that drift
-  automatically — until it exists, changes here need a manual fan-out
-  decision.
-- `go build ./... && go vet ./... && gofmt -l .` should stay clean at all
-  times — this repo has zero domain code, so there's no excuse for either
-  to ever fail.
-- `go test ./internal/architecture/... -v` should PASS on every commit —
-  if it starts failing against this repo's own (nonexistent) domain code,
-  something in the fitness tests' assumptions broke.
+All three run on real infrastructure only (no in-memory runtime, `runtime_no_memory_fitness_test.go`). `cmd/api`
+needs `DATABASE_URL`, `KAFKA_BROKERS`, `MQTT_URL` and `AMR_MAP_FILE`; `cmd/mcp` and `cmd/a2a` need `DATABASE_URL`
+and `AMR_MAP_FILE` (and `A2A_AGENT_URL`) and read through a pool whose every transaction is `BEGIN READ ONLY`. A
+missing or invalid variable is a boot error: one JSON line naming every bad variable, exit 1. The full tables are on
+the site's Configuration page. `cmd/api` runs exactly ONE replica (the single traffic controller of its fleet).
 
-## When bumping the template version
+## Write path
 
-Increment `harness-template: v<N>` (referenced in `HARNESS.md`'s
-Versioning section and meant to be recorded in every instantiated repo's
-own AGENTS.md) whenever a change here isn't purely additive/optional —
-e.g. tightening a threshold, adding a new blocking CI job, changing a
-placeholder's name. Purely-additive changes (a new advisory sensor, a new
-`.claude/skills/` guide) don't need a version bump.
+Every write (a REST use case, a robot message, a tick, the boot-time `Recover`) runs in one fleet unit of work: lock
+the fleet row, load reservations, robots and open missions, change them, save them and the events (outbox rows) in
+one transaction. The outermost unit is serialized in-process, so units never interleave and robot commands, sent only
+from the after-commit hook, leave in commit order; a rolled-back write sends nothing.
+
+## Interfaces
+
+- REST: `POST /fleets/{fleetId}/legs` (`202` or an immediate refusal), `GET .../legs/{legId}`,
+  `POST .../legs/{legId}/cancellation` (`200` cancelled, `202` robot asked, `409`), `GET /fleets/{fleetId}`,
+  `GET /fleets/{fleetId}/robots/{manufacturer}/{serialNumber}`. Every POST takes `Idempotency-Key`; every refusal has
+  a replay class in `internal/adapters/inbound/http/errors.go` (FINAL stored and replayed for 24 h, RETRYABLE releases
+  the key; map-decided refusals are RETRYABLE, ruling P3-R13). No auth.
+- Events (CloudEvents 1.0 via the outbox, both `warehouse.amr-fleet-control.events` and `.analytics`):
+  `mission.LegAssigned`, `mission.ContainerPickedUp`, `mission.LegCompleted`, `mission.LegFailed`,
+  `robot.RobotStateChanged`, `fleet.FleetCapacityChanged`, `fleetmap.DeadlockDetected`. Nothing consumed.
+- Robots: VDA 5050 v3.0.0 over MQTT, `vda5050/v3/<manufacturer>/<serialNumber>/<topic>`; publishes `order` and
+  `instantActions`, subscribes `connection`, `factsheet` and `state`.
+
+## Map file
+
+`AMR_MAP_FILE`: `fleetId`, `mapId`, `version`, `nodes` (`id`, `x`, `y`, `kind` WAYPOINT/PARKING/CHARGER/PORT/STATION,
+optional `handoffPoint`) and undirected `edges` (`id`, `a`, `b`, optional `maxSpeed`). AS/RS port node ids equal the
+robot world's port `nodeId`s (`config/map.example.yaml` is the emulator's example floor). A new `version` retires
+every open mission of the old one at boot (`MAP_VERSION_RETIRED`).
+
+## Quality gates
+
+`make check-fast`, `make check` (pre-push), `make check-all`, `make coverage` (90 % over domain and application),
+`make bdd`, `make arch-test`, `make integration` (Docker; the e2e test needs the emulator image
+`EQUIPMENT_EMULATOR_IMAGE`, default `equipment-emulator:e2e`, built from equipment-emulator `v0.1.0`), `make mutation`.
+The CI job list and the test pyramid are on the site's Testing page.

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: amr-fleet-control
+description: amr-fleet-control - the WCS VDA 5050 master control (leg assignment, traffic control by reservation, deadlocks, charging, robot registry) over MQTT, with read-only MCP and A2A
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/IQVO/amr-fleet-control
+keywords: [wcs, amr, vda5050, mqtt, golang]

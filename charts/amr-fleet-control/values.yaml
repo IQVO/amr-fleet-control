@@ -1,0 +1,206 @@
+# amr-fleet-control: the api Deployment (REST :8080, the one MQTT fleet link, the outbox relay),
+# optional read-only mcp (:8090) and a2a (:8093) Deployments, a ConfigMap (env + map.yaml), a Secret
+# for the database, and default-off Gateway API routes with their Kong plugins. Postgres, Kafka and
+# MQTT are mandatory; the chart refuses to render without them.
+
+# Exactly ONE api replica: amr-fleet-control is the single traffic controller of its fleet
+# (decision D18, ADR 0002). The chart refuses any other value.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/iqvo/amr-fleet-control
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# carry (plan 04 Task 23 review lesson d): the stop sequence (10 s HTTP drain overlapping the loops' stop, a relay pass,
+# the MQTT disconnect) is bounded at about 20 s; 45 adds a margin. The chart refuses less than 30.
+terminationGracePeriodSeconds: 45
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+database:
+  url: ""
+  existingSecret: ""
+  existingSecretKey: "DATABASE_URL"
+  migrationsExistingSecretKey: "MIGRATIONS_DATABASE_URL"
+
+kafka:
+  brokers: ""
+
+mqtt:
+  url: tcp://mosquitto.warehouse-systems.svc.cluster.local:1883
+  clientId: amr-fleet-control
+
+# carry (Task 21 review) M3: quote every value, defaults and overrides alike: Helm reads an unquoted number in a values
+# file as a float and renders a large one in exponent form (outboxIntervalMs: 1000000 becomes OUTBOX_INTERVAL_MS
+# "1e+06"), which the strict boot then refuses.
+config:
+  addr: ":8080"
+  logLevel: info
+  mapFile: /etc/amr-fleet-control/map.yaml
+  outboxIntervalMs: "250"
+  outboxBatch: "100"
+  outboxMaxAttempts: "20"
+  chargeLowPercent: "20"
+  chargeResumePercent: "80"
+  releaseAheadNodes: "2"
+  nodeToleranceMetres: "0.25"
+  robotStaleAfterSeconds: "90"
+  orderResendAfterSeconds: "5"
+  orderResendLimit: "3"
+  rerouteAfterSeconds: "10"
+  deadlockTimeoutSeconds: "60"
+  robotBlockedTimeoutSeconds: "60"
+  robotOfflineTimeoutSeconds: "60"
+
+# Observability (ADR 0005): OTLP/gRPC to the fleet Collector. enabled=false renders no OTEL_* variable and
+# the binaries keep telemetry off (an empty endpoint is off). The mcp and a2a components get
+# "<serviceName>-mcp" / "<serviceName>-a2a". SERVICE_VERSION is the image tag (appVersion when empty).
+otel:
+  enabled: true
+  endpoint: "otel-collector.observability.svc.cluster.local:4317"
+  serviceName: "amr-fleet-control"
+
+# Rendered into the ConfigMap as map.yaml (decision D1). Empty = the chart's files/map.yaml, a byte copy of
+# config/map.example.yaml (the floor of the emulator's example world; the render test keeps them equal). Replace it
+# per environment with the whole map file as a string (`map: |` or `--set-file map=<file>`); a new `version` fails
+# the open legs of the old one at the next start (decision D14).
+# deviation (Task 21): a string, not a YAML dict. Helm parses values as YAML 1.1, which reads the node key `y` as
+# the boolean true, so a dict map reaches the ConfigMap with "true": <y> and every node loses its y coordinate.
+map: ""
+
+# ruling P3-R16 / plan 04 P4-R18: ENVIRONMENT, deployment.environment.name on every span and metric of api, mcp and a2a
+# (the binaries default to "local"). Labels telemetry only; no behaviour depends on it. asrs-control's key and default.
+environment: "production"
+
+extraEnv: []
+
+# carry (plan 04 Task 23 review lesson d): the boot runs the migrations, loads the map and dials Kafka and MQTT
+# (NewFleetLink waits up to 35 s for the first subscription round) before it listens: 90 s of startup budget.
+startupProbe:
+  httpGet: {path: /healthz, port: http}
+  periodSeconds: 3
+  failureThreshold: 30
+
+livenessProbe:
+  httpGet: {path: /healthz, port: http}
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet: {path: /readyz, port: http}
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+resources:
+  limits: {cpu: 500m, memory: 256Mi}
+  requests: {cpu: 50m, memory: 64Mi}
+
+# The api through the gateway: /api/amr-fleet-control, prefix stripped. Default off; warehouse-infra's values
+# switch it on with the parentRefs of _platform.yaml.
+gatewayApi:
+  enabled: false
+  parentRefs: []
+  hosts:
+    - path: /api/amr-fleet-control
+      pathType: PathPrefix
+  stripPath: true
+
+# Read-only MCP server (cmd/mcp, ADR 0006). Reads Postgres and the map; never Kafka or MQTT.
+mcp:
+  enabled: false
+  replicaCount: 1
+  httpAddr: ":8090"
+  service:
+    type: ClusterIP
+    port: 8090
+    targetPort: 8090
+  # ruling Note C: rendered only with gatewayApi.enabled too (like the api route).
+  route:
+    enabled: false
+    path: "/api/mcp/amr-fleet-control"
+    # Empty = gatewayApi.parentRefs. warehouse-infra's _platform.yaml supplies the shared Gateway here.
+    parentRefs: []
+  extraEnv: []
+  # Read-only agents idle at a few millicores and under 16Mi (asrs-control: 20m / 32Mi; material-flow-control: 25m / 32Mi).
+  resources:
+    limits: {cpu: 250m, memory: 128Mi}
+    requests: {cpu: 25m, memory: 32Mi}
+
+# Read-only A2A agent (cmd/a2a, ADR 0006). agentUrl empty = this release's in-cluster Service.
+a2a:
+  enabled: false
+  replicaCount: 1
+  httpAddr: ":8093"
+  agentUrl: ""
+  service:
+    type: ClusterIP
+    port: 8093
+    targetPort: 8093
+  # ruling Note C: rendered only with gatewayApi.enabled too (like the api route).
+  route:
+    enabled: false
+    path: "/api/a2a/amr-fleet-control"
+    # Empty = gatewayApi.parentRefs. warehouse-infra's _platform.yaml supplies the shared Gateway here.
+    parentRefs: []
+  extraEnv: []
+  # Read-only agents idle at a few millicores and under 16Mi (asrs-control: 20m / 32Mi; material-flow-control: 25m / 32Mi).
+  resources:
+    limits: {cpu: 250m, memory: 128Mi}
+    requests: {cpu: 25m, memory: 32Mi}
+
+# carry (Task 21 review): capacity step 3 (warehouse-infra ADR 0012): true (with mcp.enabled and a2a.enabled) runs
+# cmd/mcp and cmd/a2a as two containers of one <release>-agents Deployment. Off by default; warehouse-infra switches it on.
+agents:
+  colocate: false
+  strategy: {}   # {} = k8s default (RollingUpdate); {type: Recreate} only when no surge slot is free
+
+# Kong plugins owned by this chart (fleet decision 2026-10-13), attached to every enabled HTTPRoute.
+# All default off; warehouse-infra switches them on and its _platform.yaml supplies cors.origin and
+# opentelemetry.tracesEndpoint (the keys every sibling chart reads). The chart refuses an enabled cors without an
+# origin (or with "*") and an enabled opentelemetry without a traces endpoint. NO auth plugin, ever (fleet rule).
+kongPlugins:
+  cors:
+    enabled: false
+    # The exact web origin, never "*".
+    origin: ""
+    # Further exact origins, granted after origin.
+    origins: []
+  prometheus:
+    enabled: false
+  opentelemetry:
+    enabled: false
+    tracesEndpoint: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

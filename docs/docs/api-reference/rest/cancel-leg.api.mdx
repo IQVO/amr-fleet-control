@@ -1,0 +1,71 @@
+---
+id: cancel-leg
+title: "Cancel a leg"
+description: "A QUEUED leg is cancelled at once (`200`, `LegFailed` reason CANCELLED). An ASSIGNED leg gets a VDA 5050 cancelOrder (`202`, CANCEL_REQUESTED) and ends CANCELLED when the robot confirms. A PICKED_UP leg is `409 leg-not-cancellable` (the container is on the robot); an ended leg is `409 leg-ended`."
+sidebar_label: "Cancel a leg"
+hide_title: true
+hide_table_of_contents: true
+api: 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
+sidebar_class_name: "post api-method"
+info_path: docs/api-reference/rest/amr-fleet-control-api
+custom_edit_url: null
+hide_send_button: true
+---
+
+import MethodEndpoint from "@theme/ApiExplorer/MethodEndpoint";
+import ParamsDetails from "@theme/ParamsDetails";
+import RequestSchema from "@theme/RequestSchema";
+import StatusCodes from "@theme/StatusCodes";
+import OperationTabs from "@theme/OperationTabs";
+import TabItem from "@theme/TabItem";
+import Heading from "@theme/Heading";
+import Translate from "@docusaurus/Translate";
+
+<Heading
+  as={"h1"}
+  className={"openapi__heading"}
+  children={"Cancel a leg"}
+>
+</Heading>
+
+<MethodEndpoint
+  method={"post"}
+  path={"/fleets/{fleetId}/legs/{legId}/cancellation"}
+  context={"endpoint"}
+>
+  
+</MethodEndpoint>
+
+
+
+A QUEUED leg is cancelled at once (`200`, `LegFailed` reason CANCELLED). An ASSIGNED leg gets a VDA 5050 cancelOrder (`202`, CANCEL_REQUESTED) and ends CANCELLED when the robot confirms. A PICKED_UP leg is `409 leg-not-cancellable` (the container is on the robot); an ended leg is `409 leg-ended`.
+
+
+<Heading
+  id={"request"}
+  as={"h2"}
+  className={"openapi-tabs__heading"}
+>
+  <Translate id="theme.openapi.request.title">Request</Translate>
+</Heading>
+
+<ParamsDetails
+  {...require("./cancel-leg.ParamsDetails.json")}
+>
+  
+</ParamsDetails>
+
+<RequestSchema
+  {...require("./cancel-leg.RequestSchema.json")}
+>
+  
+</RequestSchema>
+
+<StatusCodes
+  {...require("./cancel-leg.StatusCodes.json")}
+>
+  
+</StatusCodes>
+
+
+      
