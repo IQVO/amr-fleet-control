@@ -246,7 +246,7 @@ func data(t *testing.T, env map[string]any, key string) map[string]any {
 
 func assertTheSkills(t *testing.T, client *a2aclient.Client) {
 	t.Helper()
-	if f := data(t, askSkill(t, client, "get_fleet", map[string]any{"fleetId": "AMR1"}), "fleet"); f["mapVersion"] != "2026-11-20.1" ||
+	if f := data(t, askSkill(t, client, "get_fleet", map[string]any{"fleetId": "AMR1"}), "fleet"); f["mapVersion"] != "2026-11-22.1" ||
 		len(f["robots"].([]any)) != 1 {
 		t.Fatalf("get_fleet = %v", f)
 	}

@@ -16,7 +16,7 @@ func TestTheExampleMapLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.FleetID() != "AMR1" || m.MapID() != "S1" || m.Version() != "2026-11-20.1" || len(m.NodeIDs()) != 18 {
+	if m.FleetID() != "AMR1" || m.MapID() != "S1" || m.Version() != "2026-11-22.1" || len(m.NodeIDs()) != 21 {
 		t.Fatalf("map = %s %s %s %d nodes", m.FleetID(), m.MapID(), m.Version(), len(m.NodeIDs()))
 	}
 	if n, ok := m.NodeOfHandoff("ASRS1-OUT1"); !ok || n != "ASRS1-OUT1" {
