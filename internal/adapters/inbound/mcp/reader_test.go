@@ -52,7 +52,7 @@ func TestTheToolsReadThroughTheRealReader(t *testing.T) {
 		t.Fatalf("list_open_legs = %v", o)
 	}
 	f, isErr := call(t, s, "get_fleet", map[string]any{"fleetId": "AMR1"})
-	if robots, _ := f["robots"].([]any); isErr || f["mapVersion"] != "2026-11-20.1" || len(robots) != 1 ||
+	if robots, _ := f["robots"].([]any); isErr || f["mapVersion"] != "2026-11-22.1" || len(robots) != 1 ||
 		f["capacity"].(map[string]any)["legsQueued"] != 1.0 {
 		t.Fatalf("get_fleet = %v", f)
 	}

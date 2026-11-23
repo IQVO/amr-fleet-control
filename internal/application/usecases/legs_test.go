@@ -33,7 +33,9 @@ func TestRequestLegRefusesAtOnce(t *testing.T) {
 		{"AMR1", "C1", "ST1", "ST1", usecases.ErrInvalidRequest},
 		{"AMR1", "C1", "NOPE", "ASRS1-IN1", usecases.ErrUnknownHandoff},
 		{"AMR1", "C1", "ST1", "NOPE", usecases.ErrUnknownHandoff},
-		{"AMR1", "C1", "ST1", "ST9", usecases.ErrHandoffUnreachable},
+		// plan 06 D3 supersedes the former ST1->ST9 ErrHandoffUnreachable row: fleetmap.New now
+		// refuses a disconnected map at load (TestNewRefusesADisconnectedMap), so an on-map
+		// handoff point is always routable and the refusal class moved to boot time.
 	}
 	for _, c := range cases {
 		if err := req(c.fleet, c.container, c.from, c.to); !errors.Is(err, c.want) {

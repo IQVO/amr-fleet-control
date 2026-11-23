@@ -51,7 +51,7 @@ The structured answer has the `get_leg` shape above, for example (illustrative v
 
 ```json
 {"legId": "leg-0f3a91", "fleetId": "AMR1", "containerId": "C-0001", "from": "ST1", "to": "ASRS1-IN1",
- "status": "ASSIGNED", "robot": "EMU/R1", "mapVersion": "2026-11-20.1",
+ "status": "ASSIGNED", "robot": "EMU/R1", "mapVersion": "2026-11-22.1",
  "acceptedAt": "2026-11-21T10:00:00Z", "assignedAt": "2026-11-21T10:00:00Z"}
 ```
 

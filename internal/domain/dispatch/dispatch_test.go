@@ -10,7 +10,9 @@ import (
 	"github.com/IQVO/amr-fleet-control/internal/domain/robot"
 )
 
-// floor is config/map.example.yaml (Task 2), built in code.
+// floor is config/map.example.yaml (Task 2), built in code. plan 06 D3: New refuses a disconnected
+// map, so ISLE (20,20) joins the floor through a long H-ISLE corridor; it stays by far the
+// farthest node, so every distance-based choice below is unchanged.
 func floor(t *testing.T) *fleetmap.Map {
 	t.Helper()
 	n := func(id string, x, y float64, k fleetmap.NodeKind) fleetmap.Node {
@@ -32,7 +34,7 @@ func floor(t *testing.T) *fleetmap.Map {
 		Edges: []fleetmap.Edge{e("P1", "A"), e("P2", "B"), e("P3", "C"), e("CH1", "D"), e("A", "B"), e("B", "C"), e("C", "D"),
 			e("A", "ASRS1-OUT1"), e("ASRS1-OUT1", "E"), e("B", "ASRS1-IN1"), e("ASRS1-IN1", "F"), e("C", "ASRS1-OUT2"),
 			e("ASRS1-OUT2", "G"), e("D", "ASRS1-IN2"), e("ASRS1-IN2", "H"), e("E", "F"), e("F", "G"), e("G", "H"),
-			e("E", "ST1"), e("H", "ST2")}})
+			e("E", "ST1"), e("H", "ST2"), e("H", "ISLE")}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,13 +58,13 @@ func TestChooseTakesTheNearestThenTheFullestThenTheLowestKey(t *testing.T) {
 		t.Fatalf("equal distance and battery must prefer the lower key, got %+v", c)
 	}
 	if c, ok := dispatch.Choose(m, "ST1", []dispatch.Candidate{{Robot: id("R9"), Node: "ISLE", Battery: 99}, cands[1]}); !ok || c.Robot != id("R2") {
-		t.Fatalf("an unreachable candidate must be skipped: %+v", c)
+		t.Fatalf("a far candidate (ISLE, ~28 m) must lose to a nearer one: %+v", c)
 	}
 	if _, ok := dispatch.Choose(m, "ST1", nil); ok {
 		t.Fatal("no candidate chose a robot")
 	}
-	if _, ok := dispatch.Choose(m, "ST1", []dispatch.Candidate{{Robot: id("R9"), Node: "ISLE"}}); ok {
-		t.Fatal("only unreachable candidates chose a robot")
+	if _, ok := dispatch.Choose(m, "ST1", []dispatch.Candidate{{Robot: id("R9"), Node: "ZZ"}}); ok {
+		t.Fatal("a candidate on an unknown node chose a robot")
 	}
 }
 
@@ -85,8 +87,8 @@ func TestPlanChainsShortestPathsAndPutsEachActionOnItsTarget(t *testing.T) {
 	if !ok || len(steps) != 6 || steps[2].Node != "ASRS1-OUT1" {
 		t.Fatalf("avoiding F = %+v", steps)
 	}
-	if _, ok := dispatch.Plan(m, "P1", []dispatch.Target{{Node: "ISLE"}}, nil); ok {
-		t.Fatal("an unreachable target was planned")
+	if _, ok := dispatch.Plan(m, "P1", []dispatch.Target{{Node: "ZZ"}}, nil); ok {
+		t.Fatal("an unknown target was planned")
 	}
 	if _, ok := dispatch.Plan(m, "ZZ", nil, nil); ok {
 		t.Fatal("an unknown start was planned")
@@ -147,6 +149,6 @@ func TestNearestFreeIsTheClosestFreeNodeOfAKind(t *testing.T) {
 		t.Fatal("no free charger, yet one was found")
 	}
 	if n, _ := dispatch.NearestFree(m, "ISLE", fleetmap.Parking, all); n != "ISLE" {
-		t.Fatalf("an isolated parking robot's nearest parking is its own node, got %q", n)
+		t.Fatalf("a far-flung parking robot's nearest parking is its own node, got %q", n)
 	}
 }
