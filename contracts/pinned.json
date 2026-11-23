@@ -1,0 +1,12 @@
+{
+  "_doc": "Every contract copy this repo pins from a producer, and the producer branch it must equal. scripts/harness/pinned_contract_gate.py fails when a copy differs from the producer's develop. Refresh = copy the file, never edit it.",
+  "pins": [
+    {
+      "local": "contracts/equipment-emulator.world.yaml",
+      "repo": "IQVO/equipment-emulator",
+      "path": "config/world.example.yaml",
+      "ref": "develop",
+      "pinned_commit": "e241d57"
+    }
+  ]
+}

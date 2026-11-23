@@ -63,13 +63,13 @@ topic.
 
 | Event | Read by |
 | --- | --- |
-| `LegAssigned`, `ContainerPickedUp`, `LegCompleted`, `LegFailed` | material-flow-control (WCS plan 04): transport progress, container tracking, the port pickup it confirms to asrs-control |
+| `LegAssigned`, `ContainerPickedUp`, `LegCompleted`, `LegFailed` | material-flow-control (WCS plan 04, v0.1.0): transport progress, container tracking, the port pickup it confirms to asrs-control |
 | `FleetCapacityChanged` | material-flow-control: its subsystem capacity view |
 | `LegFailed` with `ROBOT_BLOCKED`, `DeadlockDetected` | exception-management (WCS plan 05, relationship 8): designed for, not consumed yet |
 | `RobotStateChanged` | no consumer yet (material-flow-control skips it) |
 
-Until each consumer's own asyncapi declares the types, `apis/asyncapi.yaml` carries an `x-no-consumer-reason` per
-message.
+material-flow-control's own asyncapi declares the five types it reads, so they carry no `x-no-consumer-reason`;
+`RobotStateChanged` and `DeadlockDetected` keep one until a consumer declares them.
 
 ## Read-only consumers
 

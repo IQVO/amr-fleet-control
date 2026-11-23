@@ -132,7 +132,7 @@ func (u *unit) stopCharging() {
 			continue
 		}
 		if resend {
-			u.s.d.Log.Warn("stopCharging unanswered; sent again", "robot", k)
+			u.s.d.Log.Warn("stopCharging unanswered; sent again", "robot", sanitizeLog(k))
 		}
 		u.instant(r.ID(), vda.Action{Type: vda.StopCharging, ID: "stop-" + u.s.d.IDs.NewID(), Blocking: vda.BlockingHard})
 		r.MarkStopChargeSentAt(u.now)

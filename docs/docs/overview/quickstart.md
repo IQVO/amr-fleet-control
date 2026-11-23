@@ -56,7 +56,7 @@ go run ./cmd/api
 ```
 
 The boot runs the embedded migrations, connects the fleet link, runs `Recover` (a `stateRequest` to every known robot)
-and logs `amr-fleet-control listening` with the fleet id `AMR1` and the map version `2026-11-20.1`. Every other
+and logs `amr-fleet-control listening` with the fleet id `AMR1` and the map version `2026-11-22.1`. Every other
 variable and its default is on [Configuration](/docs/operations/configuration). `GET /readyz` answers `200` once
 Postgres, Kafka and the MQTT link are up.
 

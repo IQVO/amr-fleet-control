@@ -226,7 +226,7 @@ func assertTheToolSet(t *testing.T, s *sdk.ClientSession) {
 
 func assertTheReads(t *testing.T, s *sdk.ClientSession) {
 	t.Helper()
-	if f, isErr := callTool(t, s, "get_fleet", `{"fleetId":"AMR1"}`); isErr || f["mapVersion"] != "2026-11-20.1" || len(f["robots"].([]any)) != 1 {
+	if f, isErr := callTool(t, s, "get_fleet", `{"fleetId":"AMR1"}`); isErr || f["mapVersion"] != "2026-11-22.1" || len(f["robots"].([]any)) != 1 {
 		t.Fatalf("get_fleet = %v", f)
 	}
 	if o, isErr := callTool(t, s, "list_open_legs", `{"fleetId":"AMR1"}`); isErr || len(o["legs"].([]any)) != 1 {

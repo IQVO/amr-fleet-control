@@ -100,6 +100,31 @@ func TestNearestFindsTheClosestNodeWithinTheTolerance(t *testing.T) {
 	}
 }
 
+// A handoff point with no edge to it (an island) is this plan's failure class: it loads today and
+// only fails at runtime as handoff-unreachable. New must refuse it, naming the unreachable pair
+// deterministically: the probe starts at the sorted-first node id and reports the sorted-first
+// unreachable node id.
+func TestNewRefusesADisconnectedMap(t *testing.T) {
+	island := fleetmap.Spec{FleetID: "AMR1", MapID: "S1", Version: "v1",
+		Nodes: []fleetmap.Node{
+			{ID: "A", Kind: fleetmap.Waypoint}, {ID: "B", X: 2, Kind: fleetmap.Waypoint},
+			{ID: "Z", X: 8, Y: 8, Kind: fleetmap.Station, HandoffPoint: "Z"},
+		},
+		Edges: []fleetmap.Edge{{ID: "A-B", A: "A", B: "B"}}}
+	if _, err := fleetmap.New(island); err == nil || err.Error() != "invalid fleet map: node Z is not reachable from A" {
+		t.Fatalf("New = %v, want %q", err, "invalid fleet map: node Z is not reachable from A")
+	}
+	twoComponents := fleetmap.Spec{FleetID: "AMR1", MapID: "S1", Version: "v1",
+		Nodes: []fleetmap.Node{
+			{ID: "A", Kind: fleetmap.Waypoint}, {ID: "B", X: 2, Kind: fleetmap.Waypoint},
+			{ID: "C", X: 4, Kind: fleetmap.Waypoint}, {ID: "D", X: 6, Kind: fleetmap.Waypoint},
+		},
+		Edges: []fleetmap.Edge{{ID: "A-B", A: "A", B: "B"}, {ID: "C-D", A: "C", B: "D"}}}
+	if _, err := fleetmap.New(twoComponents); err == nil || err.Error() != "invalid fleet map: node C is not reachable from A" {
+		t.Fatalf("New = %v, want %q", err, "invalid fleet map: node C is not reachable from A")
+	}
+}
+
 func TestNewRefusesInvalidMaps(t *testing.T) {
 	cases := []struct {
 		name string
@@ -133,6 +158,10 @@ func TestNewRefusesInvalidMaps(t *testing.T) {
 			s.Nodes = append(s.Nodes, fleetmap.Node{ID: "P1b", Kind: fleetmap.Waypoint})
 			s.Edges = append(s.Edges, fleetmap.Edge{ID: "P1-P1b", A: "P1", B: "P1b"})
 		}},
+		{"island node", func(s *fleetmap.Spec) {
+			s.Nodes = append(s.Nodes, fleetmap.Node{ID: "Z", X: 8, Y: 8, Kind: fleetmap.Station, HandoffPoint: "Z"})
+		}},
+		{"two components", func(s *fleetmap.Spec) { s.Edges = s.Edges[:1] }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

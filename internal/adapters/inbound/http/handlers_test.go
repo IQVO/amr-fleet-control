@@ -95,7 +95,7 @@ func TestALegIsAcceptedWithALocationAndNoVDA5050Vocabulary(t *testing.T) {
 	id, _ := b["leg_id"].(string)
 	if rec.Header().Get("Location") != "/fleets/AMR1/legs/"+id || b["status"] != "ASSIGNED" || b["fleet_id"] != "AMR1" ||
 		b["container_id"] != "C1" || b["from_handoff_point_id"] != "ST1" || b["to_handoff_point_id"] != "ASRS1-IN1" ||
-		b["reference"] != "tl-9" || b["map_version"] != "2026-11-20.1" || b["accepted_at"] != "2026-11-20T08:00:00Z" {
+		b["reference"] != "tl-9" || b["map_version"] != "2026-11-22.1" || b["accepted_at"] != "2026-11-20T08:00:00Z" {
 		t.Fatalf("leg = %v, Location %q", b, rec.Header().Get("Location"))
 	}
 	checkLegAnswer(t, a, b, id)
@@ -242,8 +242,8 @@ func TestCancellationAnswers200WhenDoneAnd202WhenTheRobotIsAsked(t *testing.T) {
 func TestTheFleetAndRobotViews(t *testing.T) {
 	a := newAPI(t, "R1", "R2")
 	f := decode(t, a.do("GET", "/fleets/AMR1", "", ""))
-	if f["fleet_id"] != "AMR1" || f["map_id"] != "S1" || f["map_version"] != "2026-11-20.1" || len(f["robots"].([]any)) != 2 ||
-		len(f["handoff_points"].([]any)) != 6 {
+	if f["fleet_id"] != "AMR1" || f["map_id"] != "S1" || f["map_version"] != "2026-11-22.1" || len(f["robots"].([]any)) != 2 ||
+		len(f["handoff_points"].([]any)) != 9 {
 		t.Fatalf("fleet = %v", f)
 	}
 	if c := f["capacity"].(map[string]any); c["robots_total"] != 2.0 || c["robots_available"] != 2.0 || c["legs_queued"] != 0.0 {
