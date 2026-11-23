@@ -1,8 +1,10 @@
 package config_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/IQVO/amr-fleet-control/internal/config"
@@ -25,6 +27,19 @@ func TestTheExampleMapLoads(t *testing.T) {
 	}
 	if n, _ := m.Node("CH1"); n.Kind != fleetmap.Charger {
 		t.Fatalf("CH1 = %+v", n)
+	}
+}
+
+// Task 1 (plan 06): a map file whose graph is an island is refused at load, wrapped with the
+// file path (the loader's existing `map file %s: %w` convention).
+func TestLoadMapRefusesADisconnectedMap(t *testing.T) {
+	p := write(t, "fleetId: A\nmapId: S\nversion: \"1\"\nnodes:\n  - {id: A, x: 0, y: 0, kind: PARKING}\n  - {id: B, x: 3, y: 4, kind: STATION, handoffPoint: B1}\nedges: []\n")
+	_, err := config.LoadMap(p)
+	if err == nil || !errors.Is(err, fleetmap.ErrInvalidMap) || !strings.Contains(err.Error(), p) {
+		t.Fatalf("LoadMap = %v, want ErrInvalidMap naming island node B with the path %s", err, p)
+	}
+	if err != nil && !strings.Contains(err.Error(), "node B is not reachable from A") {
+		t.Fatalf("LoadMap = %v, want the unreachable pair in the error", err)
 	}
 }
 

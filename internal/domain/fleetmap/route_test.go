@@ -3,8 +3,6 @@ package fleetmap_test
 import (
 	"reflect"
 	"testing"
-
-	"github.com/IQVO/amr-fleet-control/internal/domain/fleetmap"
 )
 
 func TestRouteIsTheShortestPathWithItsEdgesAndLength(t *testing.T) {
@@ -63,14 +61,10 @@ func TestRouteToItselfIsOneNodeAndUnknownEndsHaveNoRoute(t *testing.T) {
 	}
 }
 
-func TestDisconnectedNodesHaveNoRoute(t *testing.T) {
-	s := floor()
-	s.Nodes = append(s.Nodes, fleetmap.Node{ID: "ISLE", X: 20, Y: 20, Kind: fleetmap.Parking})
-	m := mustMap(t, s)
-	if _, ok := m.Route("P1", "ISLE", nil); ok {
-		t.Fatal("an isolated node was reached")
-	}
-}
+// plan 06 D3 supersedes TestDisconnectedNodesHaveNoRoute (it appended an island ISLE and asserted
+// Route refused it): fleetmap.New now refuses a disconnected map at load
+// (TestNewRefusesADisconnectedMap), so the fixture can no longer be built and the failure class
+// is pinned one level earlier, at New.
 
 func TestEqualLengthRoutesAreChosenDeterministically(t *testing.T) {
 	m := mustMap(t, floor())
