@@ -34,11 +34,11 @@ func TestNearestAtTheExactBoundaries(t *testing.T) {
 	if n, ok := pointMap(t, []fleetmap.Node{wp("A", half+tol, 0)}).Nearest(0, 0, half); !ok || n != "A" {
 		t.Fatalf("a node exactly 1e-9 past the tolerance = %q %v, want A (the tolerance has 1e-9 slack)", n, ok)
 	}
-	if n, ok := pointMap(t, []fleetmap.Node{wp("A", 0, 3), wp("B", 0, -3)}).Nearest(0, 3, half); !ok || n != "A" {
+	if n, ok := pointMap(t, []fleetmap.Node{wp("A", 0, 3), wp("B", 0, -3)}, [2]string{"A", "B"}).Nearest(0, 3, half); !ok || n != "A" {
 		t.Fatalf("Nearest(0, 3) = %q %v, want A at (0, 3) (the distance subtracts the query's y)", n, ok)
 	}
 	one := 1.0
-	if n, _ := pointMap(t, []fleetmap.Node{wp("A", one, 0), wp("B", -(one - tol), 0)}).Nearest(0, 0, 2); n != "A" {
+	if n, _ := pointMap(t, []fleetmap.Node{wp("A", one, 0), wp("B", -(one - tol), 0)}, [2]string{"A", "B"}).Nearest(0, 0, 2); n != "A" {
 		t.Fatalf("B exactly 1e-9 nearer than A = %q, want A (equidistant within 1e-9: the lower id)", n)
 	}
 }

@@ -20,7 +20,9 @@ var (
 	t0  = time.Date(2026, 11, 20, 8, 0, 0, 0, time.UTC)
 )
 
-// floor is config/map.example.yaml plus two unreachable nodes: ISLE (PARKING) and ST9 (STATION).
+// floor is config/map.example.yaml plus the far nodes ISLE (PARKING) and ST9 (STATION) behind a
+// long corridor. plan 06 D3: fleetmap.New refuses a disconnected map, so the former ISLE/ST9
+// island is connected through H (the nodes stay far; no route between the original nodes changes).
 func floor(t *testing.T) *fleetmap.Map {
 	t.Helper()
 	n := func(id string, x, y float64, k fleetmap.NodeKind) fleetmap.Node {
@@ -42,7 +44,7 @@ func floor(t *testing.T) *fleetmap.Map {
 		Edges: []fleetmap.Edge{e("P1", "A"), e("P2", "B"), e("P3", "C"), e("CH1", "D"), e("A", "B"), e("B", "C"), e("C", "D"),
 			e("A", "ASRS1-OUT1"), e("ASRS1-OUT1", "E"), e("B", "ASRS1-IN1"), e("ASRS1-IN1", "F"), e("C", "ASRS1-OUT2"),
 			e("ASRS1-OUT2", "G"), e("D", "ASRS1-IN2"), e("ASRS1-IN2", "H"), e("E", "F"), e("F", "G"), e("G", "H"),
-			e("E", "ST1"), e("H", "ST2"), e("ISLE", "ST9")}})
+			e("E", "ST1"), e("H", "ST2"), e("ISLE", "ST9"), e("H", "ISLE")}})
 	if err != nil {
 		t.Fatal(err)
 	}

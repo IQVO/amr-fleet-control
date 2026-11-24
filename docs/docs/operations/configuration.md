@@ -95,7 +95,7 @@ emulator's example world:
 ```yaml
 fleetId: AMR1
 mapId: S1
-version: "2026-11-20.1"
+version: "2026-11-22.1"
 nodes:
   - {id: P1, x: 0, y: 0, kind: PARKING}
   - {id: P2, x: 2, y: 0, kind: PARKING}
@@ -115,6 +115,9 @@ nodes:
   - {id: H, x: 6, y: 6, kind: WAYPOINT}
   - {id: ST1, x: 0, y: 8, kind: STATION, handoffPoint: ST1}
   - {id: ST2, x: 6, y: 8, kind: STATION, handoffPoint: ST2}
+  - {id: PK1, x: 2, y: 8, kind: STATION, handoffPoint: PK1}
+  - {id: FWD1, x: 4, y: 8, kind: STATION, handoffPoint: FWD1}
+  - {id: CLR1, x: 8, y: 6, kind: STATION, handoffPoint: CLR1}
 edges:
   - {id: P1-A, a: P1, b: A}
   - {id: P2-B, a: P2, b: B}
@@ -136,6 +139,9 @@ edges:
   - {id: G-H, a: G, b: H}
   - {id: E-ST1, a: E, b: ST1}
   - {id: H-ST2, a: H, b: ST2}
+  - {id: F-PK1, a: F, b: PK1}
+  - {id: G-FWD1, a: G, b: FWD1}
+  - {id: H-CLR1, a: H, b: CLR1}
 ```
 
 The Helm chart (`charts/amr-fleet-control`) mounts this file read-only at `/etc/amr-fleet-control/map.yaml` from its

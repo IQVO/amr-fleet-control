@@ -88,7 +88,36 @@ func New(s Spec) (*Map, error) {
 		slices.SortFunc(links, func(a, b link) int { return strings.Compare(a.to, b.to) })
 		m.adj[id] = links
 	}
+	if bad, start, found := m.unreachable(); found {
+		return nil, fmt.Errorf("%w: node %s is not reachable from %s", ErrInvalidMap, bad, start)
+	}
 	return m, nil
+}
+
+// unreachable walks the undirected graph (adj holds both directions, so edge order is irrelevant)
+// from the sorted-first node id and reports the sorted-first node id the walk did not reach.
+// A disconnected map is not drivable: a handoff point with no corridor to it only fails at
+// runtime as handoff-unreachable, so New refuses the map at load instead.
+func (m *Map) unreachable() (bad, start string, found bool) {
+	ids := m.NodeIDs()
+	visited := map[string]bool{ids[0]: true}
+	queue := []string{ids[0]}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		for _, l := range m.adj[id] {
+			if !visited[l.to] {
+				visited[l.to] = true
+				queue = append(queue, l.to)
+			}
+		}
+	}
+	for _, id := range ids {
+		if !visited[id] {
+			return id, ids[0], true
+		}
+	}
+	return "", "", false
 }
 
 func (m *Map) addNode(n Node) error {

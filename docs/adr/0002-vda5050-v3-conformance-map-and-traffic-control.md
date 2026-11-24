@@ -64,3 +64,26 @@ Status: Accepted (2026-11-20). Resolves the handoff's open question "VDA 5050 ve
 - A retained `ONLINE` connection replayed after a restart counts as a sign of life: a silent robot looks online for
   at most one more `ROBOT_STALE_AFTER` (boot recovery asks every robot for a `state` at once).
 - Robots are discovered, not registered: any robot on the broker's `vda5050/v3` topics joins the fleet.
+
+## Amendment (2026-11-22, plan 06)
+
+1. **The example floor carries the pick face, the forward area and the clarification point.** `PK1` (pick face,
+   `2,8`), `FWD1` (forward area, `4,8`) and `CLR1` (clarification point, `8,6`) are `STATION` nodes with
+   `handoffPoint`s like `ST1`/`ST2`, joined by the undirected edges `F-PK1`, `G-FWD1`, `H-CLR1`. The map `version`
+   is `2026-11-22.1`; no PORT node, robot or AS/RS path changed. material-flow-control's example layout consumes
+   exactly these three handoff points (`WH1-PCK-PK1`, `WH1-FWD-FWD1`, `WH1-CLR-CLR1`).
+2. **A disconnected map is refused at load.** `fleetmap.New` (so `config.LoadMap` at boot) now validates that the
+   undirected graph is connected — every node reachable from every node — and fails with `ErrInvalidMap`, naming one
+   unreachable pair. Decision 6's failure class (a handoff point the map cannot route to, surfacing only at runtime)
+   becomes a boot error. The runtime refusal `handoff-unreachable` (`ErrHandoffUnreachable`) stays in the published
+   REST catalogue as documented defence-in-depth: the catalogue row is a published contract, and a map that boots
+   connected can still strand a target behind reservation state — the boot check narrows, not replaces, it.
+3. **The map↔world contract is pinned.** `contracts/equipment-emulator.world.yaml` is a byte copy of
+   equipment-emulator's `config/world.example.yaml` (the producer path — `/etc/emulator/world.yaml` is only the
+   chart's in-container mount of it) at `e241d57`, registered in `contracts/pinned.json` and enforced by the
+   `pinned-contracts` CI job. The world holds devices only — robots and the AS/RS with port `nodeId`s, no floor
+   graph — so the pin is the mirror: map PORT node ids equal the world's port `nodeId`s, and every robot `mapId`
+   equals the map's `mapId` (`internal/config/floor_contract_test.go`). The emulator world itself is unchanged.
+4. **The file map is the contract.** The 18-node in-code floor in `internal/domain/fleetmap`'s tests is a
+   deliberately small TEST fixture, not the floor of record: `config/map.example.yaml` (byte-equal to the chart's
+   `files/map.yaml`, kept equal by the render test) is what `floor_contract_test.go` pins against the world.

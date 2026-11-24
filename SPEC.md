@@ -69,7 +69,9 @@ from the after-commit hook, leave in commit order; a rolled-back write sends not
 
 `AMR_MAP_FILE`: `fleetId`, `mapId`, `version`, `nodes` (`id`, `x`, `y`, `kind` WAYPOINT/PARKING/CHARGER/PORT/STATION,
 optional `handoffPoint`) and undirected `edges` (`id`, `a`, `b`, optional `maxSpeed`). AS/RS port node ids equal the
-robot world's port `nodeId`s (`config/map.example.yaml` is the emulator's example floor). A new `version` retires
+robot world's port `nodeId`s (`config/map.example.yaml` is the emulator's example floor, which also carries the
+pick-face/forward/clarification handoff points `PK1`/`FWD1`/`CLR1` — material-flow-control's example layout consumes
+them). The example world copy is pinned in `contracts/`. A new `version` retires
 every open mission of the old one at boot (`MAP_VERSION_RETIRED`).
 
 ## Quality gates
