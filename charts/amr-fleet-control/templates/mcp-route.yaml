@@ -1,5 +1,22 @@
 {{- if and .Values.gatewayApi.enabled .Values.mcp.enabled .Values.mcp.route.enabled -}}
-{{- /* ruling Note C: gatewayApi.enabled gates every HTTPRoute, like the api route (material-flow-control parity). */ -}}
+{{- /*
+MCP exposure through the Agent Router (Envoy Gateway), NOT Kong (warehouse-infra
+ADR 0015): the parentRefs value targets the shared `agent-router` Gateway. Kong
+serves the REST APIs only (the api and analytics reports routes).
+
+Host contract: /api/mcp/<context> -> Service <context>-mcp:8090, prefix rewritten
+to /mcp (the SDK's canonical endpoint on every cmd/mcp in this fleet; the healthz
+route deliberately stays off the host - it is a Kubernetes probe concern, not a
+public endpoint).
+
+No Kong annotations: the konghq.com/plugins annotation is Kong-only and inert on
+Envoy Gateway, and this chart's KongPlugins do not apply to the route. NO auth
+of any kind - endpoints are unauthenticated by fleet-wide decision.
+
+timeouts.request: Envoy's default route timeout is 15s, which would cut MCP
+Streamable HTTP responses that stream over SSE; "0s" disables it (Gateway API:
+zero means no timeout). Set mcp.route.timeouts.request to a duration to bound it.
+*/ -}}
 {{- /*
 /api/mcp/amr-fleet-control -> Service amr-fleet-control-mcp:8090, prefix rewritten to /mcp. /healthz stays
 off the host. Nothing on the route checks credentials (fleet rule).
@@ -11,14 +28,10 @@ metadata:
   labels:
     {{- include "amr-fleet-control.labels" . | nindent 4 }}
     app.kubernetes.io/component: mcp
-  {{- with include "amr-fleet-control.kongPluginNames" . }}
-  annotations:
-    konghq.com/plugins: {{ . | quote }}
-  {{- end }}
 spec:
-  # carry (plan 04 Task 23 review lesson a): mcp.route.parentRefs (warehouse-infra's _platform.yaml), else gatewayApi.parentRefs.
+  # carry (plan 04 Task 23 review lesson a): mcp.route.parentRefs (warehouse-infra's _platform.yaml, the agent-router Gateway). NO fallback to gatewayApi.parentRefs: that is Kong's.
   parentRefs:
-    {{- include "amr-fleet-control.parentRefs" (.Values.mcp.route.parentRefs | default .Values.gatewayApi.parentRefs) | trim | nindent 4 }}
+    {{- include "amr-fleet-control.parentRefs" .Values.mcp.route.parentRefs | trim | nindent 4 }}
   rules:
     - matches:
         - path:
@@ -30,6 +43,12 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /mcp
+      {{- with .Values.mcp.route.timeouts }}
+      {{- if .request }}
+      timeouts:
+        request: {{ .request | quote }}
+      {{- end }}
+      {{- end }}
       backendRefs:
         - name: {{ include "amr-fleet-control.mcpFullname" . }}
           port: {{ .Values.mcp.service.port }}

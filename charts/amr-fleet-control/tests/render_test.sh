@@ -150,13 +150,15 @@ kafka = [d for d in docs if d.get("kind") == "ConfigMap"][0]["data"]["KAFKA_BROK
 assert kafka == platform["kafka"]["brokers"], f"KAFKA_BROKERS {kafka!r}, want the platform's {platform['kafka']['brokers']!r}"
 PY
 rm -f "$p_file"
-# mcp.route.parentRefs / a2a.route.parentRefs fall back to gatewayApi.parentRefs (namespace and sectionName optional).
+# mcp.route.parentRefs / a2a.route.parentRefs do NOT fall back to gatewayApi.parentRefs: that is the Kong Gateway and
+# MCP/A2A are exposed by the Agent Router (warehouse-infra ADR 0014/0015), so a route without its own parentRefs
+# must never attach to the REST gateway.
 fb="$(helm template amr-fleet-control "$chart_dir" -f "$fx/app-values.yaml" --set kafka.brokers=k:9092 \
   --set kongPlugins.cors.enabled=false --set kongPlugins.opentelemetry.enabled=false --set 'gatewayApi.parentRefs[0].name=gw' --show-only templates/mcp-route.yaml --show-only templates/a2a-route.yaml)" \
   || fail "routes without their own parentRefs do not render"
 python3 -c 'import sys, yaml
-refs = [d["spec"]["parentRefs"] for d in yaml.safe_load_all(sys.stdin) if d]
-assert refs == [[{"name": "gw"}], [{"name": "gw"}]], refs' <<<"$fb" || fail "mcp/a2a routes do not fall back to gatewayApi.parentRefs"
+refs = [d["spec"].get("parentRefs") or [] for d in yaml.safe_load_all(sys.stdin) if d]
+assert len(refs) == 2 and all(r.get("name") != "gw" for rs in refs for r in rs), refs' <<<"$fb" || fail "mcp/a2a routes fall back to gatewayApi.parentRefs (the Kong Gateway)"
 # ... and a route's own parentRefs win over gatewayApi.parentRefs (the platform file's anchors make them equal).
 own="$(helm template amr-fleet-control "$chart_dir" -f "$fx/platform-values.yaml" -f "$fx/app-values.yaml" \
   --set 'mcp.route.parentRefs[0].name=mcp-gw' --set 'a2a.route.parentRefs[0].name=a2a-gw' \
