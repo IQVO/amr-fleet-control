@@ -17,16 +17,16 @@ mcp:
   route:
     enabled: true
     parentRefs:
-      - name: warehouse-gateway
-        namespace: kong
+      - name: agent-router
+        namespace: envoy-gateway-system
         sectionName: http
 a2a:
   enabled: true
   route:
     enabled: true
     parentRefs:
-      - name: warehouse-gateway
-        namespace: kong
+      - name: agent-router
+        namespace: envoy-gateway-system
         sectionName: http
 # The platform keys warehouse-infra's _platform.yaml supplies (test_kong_config.py asserts the plugins carry them).
 kongPlugins:
