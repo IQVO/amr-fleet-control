@@ -1,0 +1,317 @@
+# amr-fleet-control 0.1.1 (v0.1.1, c9a54ba) - System Assets & Interaction Standard v0.4
+# Interactions of amr-fleet-control (STANDARD.md Part B): every call this
+# context MAKES (technology + operation + business) and every event it
+# consumes (subscriptions).
+#
+# Outbound rest / mcp / a2a interactions: NONE. amr-fleet-control calls no
+# sibling context (CLAUDE.md hard rule 4: no outbound calls to sibling
+# contexts without an ADR; cross-context data arrives as events). The only
+# invocation technology it uses toward the fleet is event.publish, through the
+# transactional outbox drained by the cmd/api relay, on warehouse.amr-fleet-control.events
+# and its analytics twin (same id, type and data).
+#
+# Subscriptions: NONE. It consumes no Kafka topic (.claude/rules/integration-events.md,
+# ADR 0003). Its uplink is MQTT (VDA 5050 robot state, connection, factsheet),
+# which is not a CloudEvents subscription and has no kind in this standard;
+# those entry points appear as `schedule` triggers named after the use-case methods
+# the fleet link's single worker calls (FleetLink.HandleState, FleetLink.HandleConnection,
+# FleetLink.HandleFactsheet, FleetLink.Tick every second; Service.Recover at boot).
+#
+# The application layer has ONE use-case type, usecases.Service (domain-model.md:
+# "one Service"); the entry point is its method named in the triggers.
+# Every write goes through one fleet unit of work; the 7 facts are raised there.
+# The REST writes (requestLeg, cancelLeg) are called by material-flow-control
+# (ADR 0006: writes belong to material-flow-control alone); the MCP tools and A2A
+# skills are read-only (authority L1) and trigger nothing.
+apiVersion: warehouse/interactions/v1
+application: application.yaml
+
+interactions:
+
+  # --- LegAssigned
+  - id: service-publish-leg-assigned
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlEvents
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.events, type: com.warehouse.wes.amr-fleet-control.mission.LegAssigned }
+    business:
+      capability: fleet-control.mission-assignment
+      process: leg-assignment
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Announce that a robot was chosen for the leg and its VDA 5050 order went out, pinned to one map version."
+      criticality: best-effort
+      onFailure: outbox-retry
+  - id: service-publish-leg-assigned-analytics
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlAnalytics
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.analytics, type: com.warehouse.wes.amr-fleet-control.mission.LegAssigned }
+    business:
+      capability: fleet-control.mission-assignment
+      process: leg-assignment
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Analytics copy of LegAssigned (same id, type and data) for the data platform."
+      criticality: best-effort
+      onFailure: outbox-retry
+
+  # --- ContainerPickedUp
+  - id: service-publish-container-picked-up
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlEvents
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.events, type: com.warehouse.wes.amr-fleet-control.mission.ContainerPickedUp }
+    business:
+      capability: fleet-control.mission-execution
+      process: leg-execution
+      useCase: Service
+      triggers:
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+      purpose: "Announce that the robot's pick action finished at the from handoff point and the container is on the robot."
+      criticality: best-effort
+      onFailure: outbox-retry
+  - id: service-publish-container-picked-up-analytics
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlAnalytics
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.analytics, type: com.warehouse.wes.amr-fleet-control.mission.ContainerPickedUp }
+    business:
+      capability: fleet-control.mission-execution
+      process: leg-execution
+      useCase: Service
+      triggers:
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+      purpose: "Analytics copy of ContainerPickedUp (same id, type and data) for the data platform."
+      criticality: best-effort
+      onFailure: outbox-retry
+
+  # --- LegCompleted
+  - id: service-publish-leg-completed
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlEvents
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.events, type: com.warehouse.wes.amr-fleet-control.mission.LegCompleted }
+    business:
+      capability: fleet-control.mission-execution
+      process: leg-execution
+      useCase: Service
+      triggers:
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+      purpose: "Announce that the robot's drop action finished at the to handoff point: one of the two outcomes of every accepted leg."
+      criticality: best-effort
+      onFailure: outbox-retry
+  - id: service-publish-leg-completed-analytics
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlAnalytics
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.analytics, type: com.warehouse.wes.amr-fleet-control.mission.LegCompleted }
+    business:
+      capability: fleet-control.mission-execution
+      process: leg-execution
+      useCase: Service
+      triggers:
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+      purpose: "Analytics copy of LegCompleted (same id, type and data) for the data platform."
+      criticality: best-effort
+      onFailure: outbox-retry
+
+  # --- LegFailed
+  - id: service-publish-leg-failed
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlEvents
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.events, type: com.warehouse.wes.amr-fleet-control.mission.LegFailed }
+    business:
+      capability: fleet-control.mission-execution
+      process: leg-failure-handling
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Announce that a leg ended without its drop, or was cancelled, with its reason and whether the container is on the robot: the other outcome of every accepted leg."
+      criticality: best-effort
+      onFailure: outbox-retry
+  - id: service-publish-leg-failed-analytics
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlAnalytics
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.analytics, type: com.warehouse.wes.amr-fleet-control.mission.LegFailed }
+    business:
+      capability: fleet-control.mission-execution
+      process: leg-failure-handling
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Analytics copy of LegFailed (same id, type and data) for the data platform."
+      criticality: best-effort
+      onFailure: outbox-retry
+
+  # --- RobotStateChanged
+  - id: service-publish-robot-state-changed
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlEvents
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.events, type: com.warehouse.wes.amr-fleet-control.robot.RobotStateChanged }
+    business:
+      capability: fleet-control.robot-registry
+      process: robot-state-tracking
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Announce that a robot's PackML state or connection changed (never a battery tick)."
+      criticality: best-effort
+      onFailure: outbox-retry
+  - id: service-publish-robot-state-changed-analytics
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlAnalytics
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.analytics, type: com.warehouse.wes.amr-fleet-control.robot.RobotStateChanged }
+    business:
+      capability: fleet-control.robot-registry
+      process: robot-state-tracking
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Analytics copy of RobotStateChanged (same id, type and data) for the data platform."
+      criticality: best-effort
+      onFailure: outbox-retry
+
+  # --- FleetCapacityChanged
+  - id: service-publish-fleet-capacity-changed
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlEvents
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.events, type: com.warehouse.wes.amr-fleet-control.fleet.FleetCapacityChanged }
+    business:
+      capability: fleet-control.fleet-capacity
+      process: fleet-capacity-reporting
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleFactsheet, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Announce that a count of the fleet's capacity snapshot changed (on change, never periodically)."
+      criticality: best-effort
+      onFailure: outbox-retry
+  - id: service-publish-fleet-capacity-changed-analytics
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlAnalytics
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.analytics, type: com.warehouse.wes.amr-fleet-control.fleet.FleetCapacityChanged }
+    business:
+      capability: fleet-control.fleet-capacity
+      process: fleet-capacity-reporting
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleFactsheet, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Analytics copy of FleetCapacityChanged (same id, type and data) for the data platform."
+      criticality: best-effort
+      onFailure: outbox-retry
+
+  # --- DeadlockDetected
+  - id: service-publish-deadlock-detected
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlEvents
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.events, type: com.warehouse.wes.amr-fleet-control.fleetmap.DeadlockDetected }
+    business:
+      capability: fleet-control.traffic-control
+      process: deadlock-handling
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Announce once per new cycle of robots waiting on each other, with the node each robot waits for."
+      criticality: best-effort
+      onFailure: outbox-retry
+  - id: service-publish-deadlock-detected-analytics
+    technology: event.publish
+    operation:
+      asset: amr-fleet-control/asyncapi
+      id: receiveAmrFleetControlAnalytics
+      effect: write
+      event: { channel: warehouse.amr-fleet-control.analytics, type: com.warehouse.wes.amr-fleet-control.fleetmap.DeadlockDetected }
+    business:
+      capability: fleet-control.traffic-control
+      process: deadlock-handling
+      useCase: Service
+      triggers:
+        - { kind: api, via: rest, ref: requestLeg, actor: system }
+        - { kind: api, via: rest, ref: cancelLeg, actor: system }
+        - { kind: schedule, ref: FleetLink.Tick, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleState, actor: system }
+        - { kind: schedule, ref: FleetLink.HandleConnection, actor: system }
+        - { kind: schedule, ref: Service.Recover, actor: system }
+      purpose: "Analytics copy of DeadlockDetected (same id, type and data) for the data platform."
+      criticality: best-effort
+      onFailure: outbox-retry
+
+subscriptions: []
