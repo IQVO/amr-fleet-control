@@ -1,0 +1,99 @@
+{
+  "supportedInterfaces": [
+    {
+      "url": "http://amr-fleet-control-a2a.warehouse-systems.svc.cluster.local:8093/",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "capabilities": {
+    "pushNotifications": false,
+    "streaming": false
+  },
+  "defaultInputModes": [
+    "application/json",
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "application/json",
+    "text/plain"
+  ],
+  "description": "AMR Fleet Control agent of the warehouse WCS tier (read-only): the VDA 5050 master control of the autonomous mobile robots. It answers where a leg stands, what the robots are doing and how much capacity the fleet has. It never changes data: legs are requested and cancelled by material-flow-control over REST.",
+  "name": "amr-fleet-control",
+  "provider": {
+    "organization": "IQVO",
+    "url": "https://github.com/IQVO/amr-fleet-control"
+  },
+  "skills": [
+    {
+      "description": "The map version, handoff points, every robot's PackML state, battery and errors, and the capacity counts. Arguments: fleetId (required). Answers a fleet-not-found problem for a fleet the map does not name. Persists nothing.",
+      "examples": [
+        "{\"skill\":\"get_fleet\",\"arguments\":{\"fleetId\":\"AMR1\"}}"
+      ],
+      "id": "get_fleet",
+      "inputModes": [
+        "application/json"
+      ],
+      "name": "Read the fleet",
+      "tags": [
+        "amr-fleet-control",
+        "fleet",
+        "capacity",
+        "read",
+        "authority:L1"
+      ]
+    },
+    {
+      "description": "The fleet's QUEUED, ASSIGNED, PICKED_UP and CANCEL_REQUESTED legs in acceptance order. Arguments: fleetId (required). Answers a fleet-not-found problem for a fleet the map does not name (never an empty list). Persists nothing.",
+      "examples": [
+        "{\"skill\":\"list_open_legs\",\"arguments\":{\"fleetId\":\"AMR1\"}}"
+      ],
+      "id": "list_open_legs",
+      "inputModes": [
+        "application/json"
+      ],
+      "name": "List the open legs",
+      "tags": [
+        "amr-fleet-control",
+        "leg",
+        "read",
+        "authority:L1"
+      ]
+    },
+    {
+      "description": "One leg: container, from and to handoff points, status, robot, and once failed the reason and the robot's errorType. Arguments: fleetId, legId (required). Answers a fleet-not-found problem for an unknown fleet and a leg-not-found problem for an unknown leg.",
+      "examples": [
+        "{\"skill\":\"get_leg\",\"arguments\":{\"fleetId\":\"AMR1\",\"legId\":\"leg-0f3a91\"}}"
+      ],
+      "id": "get_leg",
+      "inputModes": [
+        "application/json"
+      ],
+      "name": "Read one leg",
+      "tags": [
+        "amr-fleet-control",
+        "leg",
+        "read",
+        "authority:L1"
+      ]
+    },
+    {
+      "description": "One robot: connection, PackML state, battery, charging, availability, node, mission, errors. Arguments: fleetId, manufacturer, serialNumber (required). Answers a fleet-not-found problem for an unknown fleet and a robot-not-found problem for a robot not seen yet (a robot appears on its first report, so a later read may find it).",
+      "examples": [
+        "{\"skill\":\"get_robot\",\"arguments\":{\"fleetId\":\"AMR1\",\"manufacturer\":\"EMU\",\"serialNumber\":\"R1\"}}"
+      ],
+      "id": "get_robot",
+      "inputModes": [
+        "application/json"
+      ],
+      "name": "Read one robot",
+      "tags": [
+        "amr-fleet-control",
+        "robot",
+        "read",
+        "authority:L1"
+      ]
+    }
+  ],
+  "version": "c9a54ba-arm64"
+}

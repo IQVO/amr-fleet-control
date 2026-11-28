@@ -1,0 +1,38 @@
+# amr-fleet-control 0.1.1 (v0.1.1, c9a54ba) - System Assets & Interaction Standard v0.4
+apiVersion: warehouse/application/v1
+application:
+  id: amr-fleet-control
+  name: Amr Fleet Control
+  kind: bounded-context
+  version: 0.1.1
+  description: amr-fleet-control - the WCS VDA 5050 master control (leg assignment, traffic control by
+    reservation, deadlocks, charging, robot registry) over MQTT, with read-only MCP and A2A
+  repository: https://github.com/IQVO/amr-fleet-control
+  owners:
+  - claudioed
+  lifecycle: production
+subdomain:
+  id: wes
+  name: WES
+  summary: 'Warehouse Execution System: planning, releasing and executing work on the floor.'
+boundedContext:
+  id: amr-fleet-control
+  name: Amr Fleet Control
+  classification: Generic
+  tier: WES, WCS subsystem controller
+  purpose: 'The VDA 5050 master control of the autonomous mobile robots: it accepts transport legs from
+    material-flow-control, assigns each leg to one robot by distance, battery and availability, releases
+    the route as base and horizon while reserving every node and edge for exactly one robot, resolves
+    deadlocks, sends robots to charge and to park, and keeps a registry of every robot''s connection,
+    state, errors and factsheet. Every accepted leg ends in exactly one of LegCompleted or LegFailed.'
+  publishes:
+  - warehouse.amr-fleet-control.analytics
+  - warehouse.amr-fleet-control.events
+tags:
+- mission
+- robot
+- fleet
+- fleetmap
+- leg
+assets: system-assets.yaml
+interactions: interactions.yaml

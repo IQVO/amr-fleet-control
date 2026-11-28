@@ -1,0 +1,20 @@
+{
+  "name": "com.warehouse.wes/amr-fleet-control",
+  "version": "0.1.1",
+  "title": "Amr Fleet Control MCP",
+  "description": "The VDA 5050 master control of the autonomous mobile robots: it accepts transport legs from material-flow-control, assigns each leg to one robot by distance, battery and availability, releases the route as base and horizon while reserving every node and edge for exactly one robot, resolves deadlocks, sends robots to charge and to park, and keeps a registry of every robot's connection, state, errors and factsheet.",
+  "websiteUrl": "https://iqvo.github.io/amr-fleet-control/",
+  "repository": {
+    "url": "https://github.com/IQVO/amr-fleet-control",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "http://localhost:8010/api/mcp/amr-fleet-control",
+      "protocolVersions": [
+        "2026-07-28"
+      ]
+    }
+  ]
+}
